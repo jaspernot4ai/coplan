@@ -9,9 +9,6 @@
         <p id="status">連線中…</p>
         <p id="mcp">偵測 WebMCP…</p>
 
-        <p>
-            我的暱稱：<input id="nick" placeholder="你的名字" />
-        </p>
 
         <fieldset>
             <legend>新增行程</legend>
@@ -38,10 +35,18 @@
 
         <script>
             // ═══ ① 連線層 ═══
+                // ═══ ① 從網址讀房號與身分 ═══
+            // 網址格式：/r/<房號>?as=<暱稱>   例如 /r/tokyo?as=Cindy
+            const path = location.pathname.match(/^\/r\/([\w-]+)/);
+            const roomId = path ? path[1] : "lobby";
+            const myName = new URLSearchParams(location.search).get("as") || "匿名旅伴";
+
             const proto = location.protocol === "https:" ? "wss" : "ws";
-            const ws = new WebSocket(`${proto}://${location.host}/api/room/tokyo4`);
-            const status = document.getElementById("status");
-            const board = document.getElementById("board");
+            const ws = new WebSocket(`${proto}://${location.host}/api/room/${roomId}`);
+
+
+            const status = document.getElementById("status");  
+            const board = document.getElementById("board"); 
             let items = [];
 
             let log = [];
@@ -56,11 +61,8 @@
                 renderLog();
                 };
 
-            // ═══ ② 身分（暫時用暱稱當識別）═══
-            const nick = document.getElementById("nick");
-            nick.value = localStorage.getItem("coplan.nick") || "";
-            nick.oninput = () => localStorage.setItem("coplan.nick", nick.value);
-            const me = () => nick.value.trim() || "匿名";
+            // ═══ ② 身分：接縫函式，之後要換成登入只需改這裡 ═══
+            const me = () => myName;
 
             // ═══ ③ 動作層：唯一入口 ═══
             function addActivity(activity, viaAgent) {
