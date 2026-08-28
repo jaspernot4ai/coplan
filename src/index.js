@@ -5,7 +5,6 @@ function toMinutes(hhmm) {
 
 // 重算整份行程的衝突狀態：同一天、時間重疊即互相標記
 function detectConflicts(items) {
-  // 先清空所有標記，避免留下上一次的殘影
   for (const a of items) a.conflictWith = [];
 
   for (let i = 0; i < items.length; i++) {
@@ -51,6 +50,13 @@ export class RoomDO {
     });
   }
 
+  // 儲存也集中在這裡，避免漏存某一份
+  async save() {
+    await this.ctx.storage.put("items", this.items);
+    await this.ctx.storage.put("log", this.log);
+    await this.ctx.storage.put("members", this.members);
+  }
+
   addLog(entry) {
     this.log.push({ id: crypto.randomUUID(), at: Date.now(), ...entry });
     if (this.log.length > 100) this.log = this.log.slice(-100);
@@ -60,7 +66,7 @@ export class RoomDO {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
-    server.send(this.state());   // 新連線先給目前狀態
+    server.send(this.state());
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -78,7 +84,7 @@ export class RoomDO {
           summary: `${msg.name} 加入了行程`,
         });
       }
-      await this.ctx.storage.put("members", this.members);
+      await this.save();
       this.broadcast();
       return;
     }
@@ -94,16 +100,35 @@ export class RoomDO {
       });
     }
 
-    detectConflicts(this.items);
-    await this.ctx.storage.put("items", this.items);
-    await this.ctx.storage.put("log", this.log);
-    this.broadcast();
-  }
+    if (msg.t === "update") {
+      const a = this.items.find(x => x.id === msg.id);
+      if (a) {
+        Object.assign(a, msg.patch);
+        this.addLog({
+          who: msg.by,
+          viaAgent: msg.viaAgent,
+          action: "update_activity",
+          summary: `調整「${a.title}」為 Day ${a.day} ${a.start}–${a.end}`,
+        });
+      }
+    }
 
-  async save() {
-    await this.ctx.storage.put("items", this.items);
-    await this.ctx.storage.put("log", this.log);
+    if (msg.t === "remove") {
+      const a = this.items.find(x => x.id === msg.id);
+      if (a) {
+        this.items = this.items.filter(x => x.id !== msg.id);
+        this.addLog({
+          who: msg.by,
+          viaAgent: msg.viaAgent,
+          action: "remove_activity",
+          summary: `移除「${a.title}」`,
+        });
+      }
+    }
+
+    detectConflicts(this.items);
     await this.save();
+    this.broadcast();
   }
 
   broadcast() {

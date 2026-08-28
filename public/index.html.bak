@@ -80,16 +80,6 @@
             return `已新增「${activity.title}」到 Day ${activity.day} ${activity.start}–${activity.end}。`;
             }
 
-            function updateActivity(id, patch, viaAgent) {
-              ws.send(JSON.stringify({ t: "update", id, patch, by: me(), viaAgent }));
-              return `已更新該行程。`;
-            }
-
-            function removeActivity(id, viaAgent) {
-              ws.send(JSON.stringify({ t: "remove", id, by: me(), viaAgent }));
-              return `已移除該行程。`;
-            }
-
             // ═══ ④ 畫面 ═══
             function render() {
                 board.innerHTML = "";
@@ -110,41 +100,13 @@
                             div.style.cssText = `border:1px solid ${conflicted ? "#e07b00" : "#ddd"};
                                 background:${conflicted ? "#fff4e0" : "#fff"};
                                 border-radius:6px;padding:8px;margin:4px 0`;
-
-                            // 時間可直接編輯：改完送出，等伺服器廣播回來才重繪
-                            const startEl = document.createElement("input");
-                            startEl.type = "time";
-                            startEl.value = a.start;
-                            startEl.onchange = () => updateActivity(a.id, { start: startEl.value }, false);
-
-                            const endEl = document.createElement("input");
-                            endEl.type = "time";
-                            endEl.value = a.end;
-                            endEl.onchange = () => updateActivity(a.id, { end: endEl.value }, false);
-
-                            const info = document.createElement("span");
-                            info.innerHTML = ` ${a.title}
-                                <small>［${a.type}］
-                                <span style="color:${colorOf(a.createdBy)};font-weight:bold">${a.createdBy}</span>
-                                ${a.viaAgent ? "🤖" : "🙋"}</small>`;
-
-                            const del = document.createElement("button");
-                            del.textContent = "×";
-                            del.title = "移除這個行程";
-                            del.style.cssText = "float:right;border:none;background:none;cursor:pointer;font-size:16px;color:#888";
-                            del.onclick = () => removeActivity(a.id, false);
-
-                            div.append(startEl, document.createTextNode("–"), endEl, info, del);
-
-                            if (conflicted) {
-                                const warn = document.createElement("div");
-                                warn.style.cssText = "color:#e07b00;font-size:13px";
-                                warn.textContent = `⚠️ 與其他 ${a.conflictWith.length} 個行程時間重疊`;
-                                div.appendChild(warn);
-                            }
-
+                            div.innerHTML = `
+                                <b>${a.start}–${a.end}</b> ${a.title}
+                                <small>［${a.type}］ ${a.createdBy} ${a.viaAgent ? "🤖" : "🙋"}</small>
+                                ${conflicted ? `<div style="color:#e07b00;font-size:13px">⚠️ 與其他 ${a.conflictWith.length} 個行程時間重疊</div>` : ""}
+                            `;
                             section.appendChild(div);
-                        }
+                            }
                     board.appendChild(section);
                 }
             }
@@ -215,7 +177,7 @@
                 content: [{
                     type: "text",
                     text: items.length
-                    ? items.map(a => `[${a.id}] Day ${a.day} ${a.start}–${a.end}｜${a.title}［${a.type}］（${a.createdBy}）`).join("\n")
+                    ? items.map(a => `Day ${a.day} ${a.start}–${a.end}｜${a.title}［${a.type}］（${a.createdBy}）`).join("\n")
                     : "行程表目前是空的。"
                 }]
                 })
@@ -238,44 +200,6 @@
                 execute: (a) => ({
                 content: [{ type: "text", text: addActivity(a, true) }]
                 })
-            });
-
-            mc.registerTool({
-                name: "update_activity",
-                description: "修改共享行程表上既有項目的時間、名稱或類型。需先用 list_itinerary 取得項目 id。時間衝突時仍會修改，但會被標記提醒成員。",
-                inputSchema: {
-                type: "object",
-                properties: {
-                    id: { type: "string", description: "要修改的項目 id" },
-                    day: { type: "number", description: "第幾天" },
-                    start: { type: "string", description: "開始時間 HH:MM" },
-                    end: { type: "string", description: "結束時間 HH:MM" },
-                    title: { type: "string", description: "行程名稱" }
-                },
-                required: ["id"]
-                },
-                execute: ({ id, ...patch }) => {
-                const target = items.find(x => x.id === id);
-                if (!target) return { content: [{ type: "text", text: `找不到 id 為 ${id} 的項目，請先用 list_itinerary 確認。` }] };
-                updateActivity(id, patch, true);
-                return { content: [{ type: "text", text: `已更新「${target.title}」。` }] };
-                }
-            });
-
-            mc.registerTool({
-                name: "remove_activity",
-                description: "從共享行程表移除一個項目。這會影響所有成員，移除前請先向使用者確認。需先用 list_itinerary 取得項目 id。",
-                inputSchema: {
-                type: "object",
-                properties: { id: { type: "string", description: "要移除的項目 id" } },
-                required: ["id"]
-                },
-                execute: ({ id }) => {
-                const target = items.find(x => x.id === id);
-                if (!target) return { content: [{ type: "text", text: `找不到 id 為 ${id} 的項目。` }] };
-                removeActivity(id, true);
-                return { content: [{ type: "text", text: `已移除「${target.title}」。` }] };
-                }
             });
             }, 500);
         </script>
