@@ -79,15 +79,19 @@
                 if (dayItems.length === 0) {
                 section.innerHTML += `<p style="color:#888">還沒有安排</p>`;
                 }
-                for (const a of dayItems) {
-                const div = document.createElement("div");
-                div.style.cssText = "border:1px solid #ddd;border-radius:6px;padding:8px;margin:4px 0";
-                div.innerHTML = `
-                    <b>${a.start}–${a.end}</b> ${a.title}
-                    <small>［${a.type}］ ${a.createdBy} ${a.viaAgent ? "🤖" : "🙋"}</small>
-                `;
-                section.appendChild(div);
-                }
+                    for (const a of dayItems) {
+                        const div = document.createElement("div");
+                        const conflicted = a.conflictWith && a.conflictWith.length > 0;
+                        div.style.cssText = `border:1px solid ${conflicted ? "#e07b00" : "#ddd"};
+                            background:${conflicted ? "#fff4e0" : "#fff"};
+                            border-radius:6px;padding:8px;margin:4px 0`;
+                        div.innerHTML = `
+                            <b>${a.start}–${a.end}</b> ${a.title}
+                            <small>［${a.type}］ ${a.createdBy} ${a.viaAgent ? "🤖" : "🙋"}</small>
+                            ${conflicted ? `<div style="color:#e07b00;font-size:13px">⚠️ 與其他 ${a.conflictWith.length} 個行程時間重疊</div>` : ""}
+                        `;
+                        section.appendChild(div);
+                        }
                 board.appendChild(section);
             }
             }

@@ -1,3 +1,37 @@
+function toMinutes(hhmm) {
+  const [h, m] = String(hhmm).split(":").map(Number);
+  return h * 60 + m;
+}
+
+// 重算整份行程的衝突狀態：同一天、時間重疊即互相標記
+function detectConflicts(items) {
+  // 先清空所有標記，避免留下上一次的殘影
+  for (const a of items) a.conflictWith = [];
+
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      const a = items[i];
+      const b = items[j];
+      if (Number(a.day) !== Number(b.day)) continue;
+
+      const overlap =
+        toMinutes(a.start) < toMinutes(b.end) &&
+        toMinutes(b.start) < toMinutes(a.end);
+
+      if (overlap) {
+        a.conflictWith.push(b.id);
+        b.conflictWith.push(a.id);
+      }
+    }
+  }
+  return items;
+}
+
+
+
+
+
+
 // ① 房間本體：一個房號 = 一個實例，各自獨立、有記憶
 export class RoomDO {
   constructor(ctx, env) {
@@ -19,14 +53,15 @@ export class RoomDO {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  async webSocketMessage(ws, message) {
+    async webSocketMessage(ws, message) {
     const msg = JSON.parse(message);
 
     if (msg.t === "add") {
       this.items.push({ id: crypto.randomUUID(), ...msg.activity });
     }
 
-    await this.ctx.storage.put("items", this.items);   // 寫回硬碟
+    detectConflicts(this.items);                        // ← 加這行
+    await this.ctx.storage.put("items", this.items);
     this.broadcast();
   }
 
