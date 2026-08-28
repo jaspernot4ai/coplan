@@ -5,93 +5,149 @@
     <title>WebMCP 通路測試</title>
   </head>
     <body>
-    <h1>共享清單 × WebMCP</h1>
-    <p id="status">連線中…</p>
-    <p id="mcp">偵測 WebMCP…</p>
-    <input id="text" placeholder="打字然後按新增" />
-    <button id="add">新增</button>
-    <ul id="list"></ul>
+        <h1>CoPlan — 共享行程</h1>
+        <p id="status">連線中…</p>
+        <p id="mcp">偵測 WebMCP…</p>
+
+        <p>
+            我的暱稱：<input id="nick" placeholder="你的名字" />
+        </p>
+
+        <fieldset>
+            <legend>新增行程</legend>
+            <select id="type">
+            <option>景點</option>
+            <option>餐廳</option>
+            <option>交通</option>
+            <option>住宿</option>
+            </select>
+            <select id="day">
+            <option value="1">Day 1</option>
+            <option value="2">Day 2</option>
+            <option value="3">Day 3</option>
+            </select>
+            <input id="start" type="time" value="09:00" />
+            <input id="end" type="time" value="11:00" />
+            <input id="title" placeholder="行程名稱" />
+            <button id="add">新增</button>
+        </fieldset>
+
+        <div id="board"></div>
 
         <script>
             // ═══ ① 連線層 ═══
             const proto = location.protocol === "https:" ? "wss" : "ws";
             const ws = new WebSocket(`${proto}://${location.host}/api/room/tokyo`);
-
             const status = document.getElementById("status");
-            const list = document.getElementById("list");
-            let items = [];   // 本地保存一份，讓工具讀得到
+            const board = document.getElementById("board");
+            let items = [];
 
             ws.onopen = () => { status.textContent = "✅ 已連線"; };
             ws.onclose = () => { status.textContent = "❌ 連線中斷"; };
             ws.onmessage = (event) => {
             items = JSON.parse(event.data);
-            list.innerHTML = "";
-            for (const item of items) {
-                const li = document.createElement("li");
-                li.textContent = item;
-                list.appendChild(li);
-            }
+            render();
             };
 
-            // ═══ ② 動作層：唯一入口，人和 Agent 都走這裡 ═══
-            function addItem(text) {
-            const value = String(text).trim();
-            if (!value) return "內容不能是空的。";
-            ws.send(value);
-            return `已新增「${value}」。`;
+            // ═══ ② 身分（暫時用暱稱當識別）═══
+            const nick = document.getElementById("nick");
+            nick.value = localStorage.getItem("coplan.nick") || "";
+            nick.oninput = () => localStorage.setItem("coplan.nick", nick.value);
+            const me = () => nick.value.trim() || "匿名";
+
+            // ═══ ③ 動作層：唯一入口 ═══
+            function addActivity(activity, viaAgent) {
+            if (!activity.title) return "行程名稱不能空白。";
+            ws.send(JSON.stringify({
+                t: "add",
+                activity: { ...activity, createdBy: me(), viaAgent }
+            }));
+            return `已新增「${activity.title}」到 Day ${activity.day} ${activity.start}–${activity.end}。`;
             }
 
-            // ═══ ③ 介面層 A：人的按鈕 ═══
+            // ═══ ④ 畫面 ═══
+            function render() {
+            board.innerHTML = "";
+            for (const day of [1, 2, 3]) {
+                const dayItems = items
+                .filter(a => Number(a.day) === day)
+                .sort((a, b) => a.start.localeCompare(b.start));
+
+                const section = document.createElement("section");
+                section.innerHTML = `<h3>Day ${day}</h3>`;
+
+                if (dayItems.length === 0) {
+                section.innerHTML += `<p style="color:#888">還沒有安排</p>`;
+                }
+                for (const a of dayItems) {
+                const div = document.createElement("div");
+                div.style.cssText = "border:1px solid #ddd;border-radius:6px;padding:8px;margin:4px 0";
+                div.innerHTML = `
+                    <b>${a.start}–${a.end}</b> ${a.title}
+                    <small>［${a.type}］ ${a.createdBy} ${a.viaAgent ? "🤖" : "🙋"}</small>
+                `;
+                section.appendChild(div);
+                }
+                board.appendChild(section);
+            }
+            }
+
+            // ═══ ⑤ 介面 A：人的表單 ═══
             document.getElementById("add").onclick = () => {
-            const input = document.getElementById("text");
-            addItem(input.value);
-            input.value = "";
+            const titleEl = document.getElementById("title");
+            addActivity({
+                type: document.getElementById("type").value,
+                day: Number(document.getElementById("day").value),
+                start: document.getElementById("start").value,
+                end: document.getElementById("end").value,
+                title: titleEl.value.trim(),
+            }, false);
+            titleEl.value = "";
             };
 
-            // ═══ ③ 介面層 B：Agent 的工具 ═══
+            // ═══ ⑤ 介面 B：Agent 的工具 ═══
             const mcpStatus = document.getElementById("mcp");
             let registered = false;
 
             setInterval(() => {
-            const mc = navigator.modelContext || document.modelContext || window.modelContext;
-            mcpStatus.textContent = mc
-                ? `✅ WebMCP 已就緒（來源：${
-                    navigator.modelContext ? "navigator" :
-                    document.modelContext ? "document" : "window"
-                    }）`
-                : "❌ WebMCP 不可用";
+            const mc = document.modelContext || navigator.modelContext || window.modelContext;
+            mcpStatus.textContent = mc ? "✅ WebMCP 已就緒" : "❌ WebMCP 不可用";
             if (!mc || registered) return;
             registered = true;
 
             mc.registerTool({
-                name: "add_item",
-                description: "在這個多人共享的清單上新增一個項目。所有成員都會即時看到。",
-                inputSchema: {
-                type: "object",
-                properties: {
-                    text: { type: "string", description: "要新增的項目內容" }
-                },
-                required: ["text"]
-                },
-                execute: ({ text }) => ({
-                content: [{ type: "text", text: addItem(text) }]
-                })
-            });
-
-            mc.registerTool({
-                name: "list_items",
-                description: "讀取這個多人共享清單目前的所有項目。新增或修改前先呼叫這個來了解現況。",
+                name: "list_itinerary",
+                description: "讀取這個多人共享行程表目前的所有項目，包含天數、時間、名稱、類型與提出者。在新增行程前先呼叫這個，避免與其他人的安排衝突。",
                 inputSchema: { type: "object", properties: {} },
                 execute: () => ({
                 content: [{
                     type: "text",
                     text: items.length
-                    ? `目前有 ${items.length} 個項目：\n${items.map(i => "- " + i).join("\n")}`
-                    : "清單目前是空的。"
+                    ? items.map(a => `Day ${a.day} ${a.start}–${a.end}｜${a.title}［${a.type}］（${a.createdBy}）`).join("\n")
+                    : "行程表目前是空的。"
                 }]
+                })
+            });
+
+            mc.registerTool({
+                name: "add_activity",
+                description: "代表目前使用者，在多人共享的行程表上新增一個項目。所有成員會即時看到。",
+                inputSchema: {
+                type: "object",
+                properties: {
+                    type: { type: "string", enum: ["景點", "餐廳", "交通", "住宿"], description: "行程類型" },
+                    day: { type: "number", description: "第幾天，從 1 開始" },
+                    start: { type: "string", description: "開始時間，24 小時制 HH:MM" },
+                    end: { type: "string", description: "結束時間，24 小時制 HH:MM" },
+                    title: { type: "string", description: "行程名稱，例如「築地市場」" }
+                },
+                required: ["type", "day", "start", "end", "title"]
+                },
+                execute: (a) => ({
+                content: [{ type: "text", text: addActivity(a, true) }]
                 })
             });
             }, 500);
         </script>
-    </body>
+        </body>
 </html>

@@ -15,7 +15,7 @@ Cloudflare Workers + Durable Objects（一房間一實例）、原生 JS、WebSo
 - 改完主動告訴我：改了哪些檔案、為什麼、有沒有我該注意的取捨
 
 # 架構規則
-- WebMCP 的 API 位置因平台而異：Chrome 是 navigator.modelContext，ChatGPT 桌面版是 document.modelContext。一律用 `navigator.modelContext || document.modelContext || window.modelContext`
+- WebMCP 的 API 位置因平台而異：Chrome 是 navigator.modelContext，ChatGPT 桌面版是 document.modelContext。一律用 `document.modelContext || navigator.modelContext || window.modelContext;`
 - WebMCP 工具的 execute 必須呼叫與 UI 按鈕相同的函式，不可另寫一套邏輯
 - 工具的回傳值是寫給 AI 看的回報訊息，要說清楚做了什麼
 - 衝突偵測、預算判斷一律用程式邏輯，不呼叫 LLM

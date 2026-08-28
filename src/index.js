@@ -2,24 +2,32 @@
 export class RoomDO {
   constructor(ctx, env) {
     this.ctx = ctx;
-    this.items = [];  // 這個房間的共享資料
+    this.items = [];
+
+    // 開機時先從硬碟讀回來。blockConcurrencyWhile 會擋住其他請求，
+    // 確保讀完之前不會有人拿到空的資料。
+    this.ctx.blockConcurrencyWhile(async () => {
+      this.items = (await this.ctx.storage.get("items")) || [];
+    });
   }
 
   async fetch(request) {
-    // 建立 WebSocket 的兩端：一端給瀏覽器，一端留在伺服器
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
-
-    this.ctx.acceptWebSocket(server);   // 交給 Cloudflare 託管這條連線
-    server.send(JSON.stringify(this.items));  // 一連上就先給他目前的資料
-
+    this.ctx.acceptWebSocket(server);
+    server.send(JSON.stringify(this.items));   // 新連線先給目前狀態
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  // 有人透過 WebSocket 傳訊息進來時會呼叫這裡
   async webSocketMessage(ws, message) {
-    this.items.push(message);   // 加進共享資料
-    this.broadcast();           // 通知所有人
+    const msg = JSON.parse(message);
+
+    if (msg.t === "add") {
+      this.items.push({ id: crypto.randomUUID(), ...msg.activity });
+    }
+
+    await this.ctx.storage.put("items", this.items);   // 寫回硬碟
+    this.broadcast();
   }
 
   broadcast() {
