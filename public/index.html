@@ -29,6 +29,8 @@
             <button id="add">新增</button>
         </fieldset>
 
+        
+        <p>房間成員：<span id="members"></span></p>
         <div id="board"></div>
         <h3>Agent 活動時間軸</h3>
         <div id="timeline"></div>
@@ -47,20 +49,24 @@
 
             const status = document.getElementById("status");  
             const board = document.getElementById("board"); 
-            let items = [];
-
+            let items = [];   
+            let members = {};
             let log = [];
 
-            ws.onopen = () => { status.textContent = "✅ 已連線"; };
+            ws.onopen = () => {
+                status.textContent = "✅ 已連線";
+                ws.send(JSON.stringify({ t: "join", name: me() }));
+                };
             ws.onclose = () => { status.textContent = "❌ 連線中斷"; };
             ws.onmessage = (event) => {
                 const state = JSON.parse(event.data);
                 items = state.items;
                 log = state.log;
+                members = state.members || {};
                 render();
                 renderLog();
+                renderMembers();
                 };
-
             // ═══ ② 身分：接縫函式，之後要換成登入只需改這裡 ═══
             const me = () => myName;
 
@@ -122,6 +128,22 @@
                     `;
                     el.appendChild(div);
                 }
+            }
+
+
+            // 從名字算出固定顏色：同一個名字永遠同色，不需儲存
+            const PALETTE = ["#2563eb", "#db2777", "#16a34a", "#ea580c", "#7c3aed", "#0891b2"];
+            function colorOf(name) {
+            let hash = 0;
+            for (const ch of String(name)) hash = (hash * 31 + ch.charCodeAt(0)) % 10000;
+            return PALETTE[hash % PALETTE.length];
+            }
+
+            function renderMembers() {
+            const el = document.getElementById("members");
+            el.innerHTML = Object.values(members).map(m =>
+                `<span style="color:${colorOf(m.name)};font-weight:bold;margin-right:10px">● ${m.name}</span>`
+            ).join("");
             }
 
             // ═══ ⑤ 介面 A：人的表單 ═══

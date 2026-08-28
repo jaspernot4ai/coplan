@@ -27,40 +27,61 @@ function detectConflicts(items) {
   return items;
 }
 
-
-
-
-
-
 // ① 房間本體：一個房號 = 一個實例，各自獨立、有記憶
 export class RoomDO {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.items = [];
+    this.log = [];
+    this.members = {};
 
-    addLog(entry) {
-        this.log.push({ id: crypto.randomUUID(), at: Date.now(), ...entry });
-        if (this.log.length > 100) this.log = this.log.slice(-100);   // 只留最近 100 筆
-    }
+    this.ctx.blockConcurrencyWhile(async () => {
+      this.items = (await this.ctx.storage.get("items")) || [];
+      this.log = (await this.ctx.storage.get("log")) || [];
+      this.members = (await this.ctx.storage.get("members")) || {};
+    });
+  }
 
-    constructor(ctx, env) {
-        this.ctx = ctx;
-        this.items = [];
-        this.log = [];
+  // 廣播格式集中在這裡，加欄位只要改一個地方
+  state() {
+    return JSON.stringify({
+      items: this.items,
+      log: this.log,
+      members: this.members,
+    });
+  }
 
-        this.ctx.blockConcurrencyWhile(async () => {
-        this.items = (await this.ctx.storage.get("items")) || [];
-        this.log = (await this.ctx.storage.get("log")) || [];
-        });
-    }
+  addLog(entry) {
+    this.log.push({ id: crypto.randomUUID(), at: Date.now(), ...entry });
+    if (this.log.length > 100) this.log = this.log.slice(-100);
+  }
 
   async fetch(request) {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
-        server.send(JSON.stringify({ items: this.items, log: this.log }));   // 新連線先給目前狀態
+    server.send(this.state());   // 新連線先給目前狀態
     return new Response(null, { status: 101, webSocket: client });
   }
 
-      async webSocketMessage(ws, message) {
+  async webSocketMessage(ws, message) {
     const msg = JSON.parse(message);
+
+    if (msg.t === "join") {
+      const isNew = !this.members[msg.name];
+      this.members[msg.name] = { name: msg.name, lastSeen: Date.now() };
+      if (isNew) {
+        this.addLog({
+          who: msg.name,
+          viaAgent: false,
+          action: "join",
+          summary: `${msg.name} 加入了行程`,
+        });
+      }
+      await this.ctx.storage.put("members", this.members);
+      this.broadcast();
+      return;
+    }
 
     if (msg.t === "add") {
       const activity = { id: crypto.randomUUID(), ...msg.activity };
@@ -79,8 +100,14 @@ export class RoomDO {
     this.broadcast();
   }
 
-   broadcast() {
-    const payload = JSON.stringify({ items: this.items, log: this.log });
+  async save() {
+    await this.ctx.storage.put("items", this.items);
+    await this.ctx.storage.put("log", this.log);
+    await this.save();
+  }
+
+  broadcast() {
+    const payload = this.state();
     for (const socket of this.ctx.getWebSockets()) {
       socket.send(payload);
     }
@@ -88,11 +115,10 @@ export class RoomDO {
 }
 
 // ② Worker：看網址決定把請求轉給哪個房間
-// ② Worker：看網址決定把請求轉給哪個房間
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const match = url.pathname.match(/^\/api\/room\/(\w+)$/);
+    const match = url.pathname.match(/^\/api\/room\/([\w-]+)$/);
 
     if (match) {
       const roomName = match[1];
