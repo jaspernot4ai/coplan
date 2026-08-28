@@ -33,21 +33,28 @@
         </fieldset>
 
         <div id="board"></div>
+        <h3>Agent 活動時間軸</h3>
+        <div id="timeline"></div>
 
         <script>
             // ═══ ① 連線層 ═══
             const proto = location.protocol === "https:" ? "wss" : "ws";
-            const ws = new WebSocket(`${proto}://${location.host}/api/room/tokyo`);
+            const ws = new WebSocket(`${proto}://${location.host}/api/room/tokyo4`);
             const status = document.getElementById("status");
             const board = document.getElementById("board");
             let items = [];
 
+            let log = [];
+
             ws.onopen = () => { status.textContent = "✅ 已連線"; };
             ws.onclose = () => { status.textContent = "❌ 連線中斷"; };
             ws.onmessage = (event) => {
-            items = JSON.parse(event.data);
-            render();
-            };
+                const state = JSON.parse(event.data);
+                items = state.items;
+                log = state.log;
+                render();
+                renderLog();
+                };
 
             // ═══ ② 身分（暫時用暱稱當識別）═══
             const nick = document.getElementById("nick");
@@ -67,33 +74,52 @@
 
             // ═══ ④ 畫面 ═══
             function render() {
-            board.innerHTML = "";
-            for (const day of [1, 2, 3]) {
-                const dayItems = items
-                .filter(a => Number(a.day) === day)
-                .sort((a, b) => a.start.localeCompare(b.start));
+                board.innerHTML = "";
+                for (const day of [1, 2, 3]) {
+                    const dayItems = items
+                    .filter(a => Number(a.day) === day)
+                    .sort((a, b) => a.start.localeCompare(b.start));
 
-                const section = document.createElement("section");
-                section.innerHTML = `<h3>Day ${day}</h3>`;
+                    const section = document.createElement("section");
+                    section.innerHTML = `<h3>Day ${day}</h3>`;
 
-                if (dayItems.length === 0) {
-                section.innerHTML += `<p style="color:#888">還沒有安排</p>`;
+                    if (dayItems.length === 0) {
+                    section.innerHTML += `<p style="color:#888">還沒有安排</p>`;
+                    }
+                        for (const a of dayItems) {
+                            const div = document.createElement("div");
+                            const conflicted = a.conflictWith && a.conflictWith.length > 0;
+                            div.style.cssText = `border:1px solid ${conflicted ? "#e07b00" : "#ddd"};
+                                background:${conflicted ? "#fff4e0" : "#fff"};
+                                border-radius:6px;padding:8px;margin:4px 0`;
+                            div.innerHTML = `
+                                <b>${a.start}–${a.end}</b> ${a.title}
+                                <small>［${a.type}］ ${a.createdBy} ${a.viaAgent ? "🤖" : "🙋"}</small>
+                                ${conflicted ? `<div style="color:#e07b00;font-size:13px">⚠️ 與其他 ${a.conflictWith.length} 個行程時間重疊</div>` : ""}
+                            `;
+                            section.appendChild(div);
+                            }
+                    board.appendChild(section);
                 }
-                    for (const a of dayItems) {
-                        const div = document.createElement("div");
-                        const conflicted = a.conflictWith && a.conflictWith.length > 0;
-                        div.style.cssText = `border:1px solid ${conflicted ? "#e07b00" : "#ddd"};
-                            background:${conflicted ? "#fff4e0" : "#fff"};
-                            border-radius:6px;padding:8px;margin:4px 0`;
-                        div.innerHTML = `
-                            <b>${a.start}–${a.end}</b> ${a.title}
-                            <small>［${a.type}］ ${a.createdBy} ${a.viaAgent ? "🤖" : "🙋"}</small>
-                            ${conflicted ? `<div style="color:#e07b00;font-size:13px">⚠️ 與其他 ${a.conflictWith.length} 個行程時間重疊</div>` : ""}
-                        `;
-                        section.appendChild(div);
-                        }
-                board.appendChild(section);
             }
+
+
+            function renderLog() {
+                const el = document.getElementById("timeline");
+                el.innerHTML = "";
+                // 最新的排最上面
+                for (const e of [...log].reverse()) {
+                    const div = document.createElement("div");
+                    div.style.cssText = "border-bottom:1px solid #eee;padding:6px 0;font-size:13px";
+                    const time = new Date(e.at).toLocaleTimeString("zh-TW", { hour12: false });
+                    div.innerHTML = `
+                    <span style="color:#888">${time}</span>
+                    <b>${e.viaAgent ? "🤖 " + e.who + " 的 Agent" : "🙋 " + e.who}</b>
+                    <code style="background:#f0f0f0;padding:1px 4px">${e.action}</code>
+                    ${e.summary}
+                    `;
+                    el.appendChild(div);
+                }
             }
 
             // ═══ ⑤ 介面 A：人的表單 ═══

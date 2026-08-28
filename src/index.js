@@ -34,45 +34,60 @@ function detectConflicts(items) {
 
 // ① 房間本體：一個房號 = 一個實例，各自獨立、有記憶
 export class RoomDO {
-  constructor(ctx, env) {
-    this.ctx = ctx;
-    this.items = [];
 
-    // 開機時先從硬碟讀回來。blockConcurrencyWhile 會擋住其他請求，
-    // 確保讀完之前不會有人拿到空的資料。
-    this.ctx.blockConcurrencyWhile(async () => {
-      this.items = (await this.ctx.storage.get("items")) || [];
-    });
-  }
+    addLog(entry) {
+        this.log.push({ id: crypto.randomUUID(), at: Date.now(), ...entry });
+        if (this.log.length > 100) this.log = this.log.slice(-100);   // 只留最近 100 筆
+    }
+
+    constructor(ctx, env) {
+        this.ctx = ctx;
+        this.items = [];
+        this.log = [];
+
+        this.ctx.blockConcurrencyWhile(async () => {
+        this.items = (await this.ctx.storage.get("items")) || [];
+        this.log = (await this.ctx.storage.get("log")) || [];
+        });
+    }
 
   async fetch(request) {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
-    server.send(JSON.stringify(this.items));   // 新連線先給目前狀態
+        server.send(JSON.stringify({ items: this.items, log: this.log }));   // 新連線先給目前狀態
     return new Response(null, { status: 101, webSocket: client });
   }
 
-    async webSocketMessage(ws, message) {
+      async webSocketMessage(ws, message) {
     const msg = JSON.parse(message);
 
     if (msg.t === "add") {
-      this.items.push({ id: crypto.randomUUID(), ...msg.activity });
+      const activity = { id: crypto.randomUUID(), ...msg.activity };
+      this.items.push(activity);
+      this.addLog({
+        who: activity.createdBy,
+        viaAgent: activity.viaAgent,
+        action: "add_activity",
+        summary: `新增「${activity.title}」到 Day ${activity.day} ${activity.start}–${activity.end}`,
+      });
     }
 
-    detectConflicts(this.items);                        // ← 加這行
+    detectConflicts(this.items);
     await this.ctx.storage.put("items", this.items);
+    await this.ctx.storage.put("log", this.log);
     this.broadcast();
   }
 
-  broadcast() {
-    const payload = JSON.stringify(this.items);
+   broadcast() {
+    const payload = JSON.stringify({ items: this.items, log: this.log });
     for (const socket of this.ctx.getWebSockets()) {
       socket.send(payload);
     }
   }
 }
 
+// ② Worker：看網址決定把請求轉給哪個房間
 // ② Worker：看網址決定把請求轉給哪個房間
 export default {
   async fetch(request, env) {
@@ -81,9 +96,9 @@ export default {
 
     if (match) {
       const roomName = match[1];
-      const id = env.ROOM.idFromName(roomName);  // 房號 → 實例 id
-      const room = env.ROOM.get(id);             // 取得那個實例
-      return room.fetch(request);                // 把請求交給它
+      const id = env.ROOM.idFromName(roomName);
+      const room = env.ROOM.get(id);
+      return room.fetch(request);
     }
 
     return new Response("Not found", { status: 404 });
