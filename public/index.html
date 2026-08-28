@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebMCP 通路測試</title>
+  </head>
+    <body>
+    <h1>共享清單 × WebMCP</h1>
+    <p id="status">連線中…</p>
+    <p id="mcp">偵測 WebMCP…</p>
+    <input id="text" placeholder="打字然後按新增" />
+    <button id="add">新增</button>
+    <ul id="list"></ul>
+
+        <script>
+            // ═══ ① 連線層 ═══
+            const proto = location.protocol === "https:" ? "wss" : "ws";
+            const ws = new WebSocket(`${proto}://${location.host}/api/room/tokyo`);
+
+            const status = document.getElementById("status");
+            const list = document.getElementById("list");
+            let items = [];   // 本地保存一份，讓工具讀得到
+
+            ws.onopen = () => { status.textContent = "✅ 已連線"; };
+            ws.onclose = () => { status.textContent = "❌ 連線中斷"; };
+            ws.onmessage = (event) => {
+            items = JSON.parse(event.data);
+            list.innerHTML = "";
+            for (const item of items) {
+                const li = document.createElement("li");
+                li.textContent = item;
+                list.appendChild(li);
+            }
+            };
+
+            // ═══ ② 動作層：唯一入口，人和 Agent 都走這裡 ═══
+            function addItem(text) {
+            const value = String(text).trim();
+            if (!value) return "內容不能是空的。";
+            ws.send(value);
+            return `已新增「${value}」。`;
+            }
+
+            // ═══ ③ 介面層 A：人的按鈕 ═══
+            document.getElementById("add").onclick = () => {
+            const input = document.getElementById("text");
+            addItem(input.value);
+            input.value = "";
+            };
+
+            // ═══ ③ 介面層 B：Agent 的工具 ═══
+            const mcpStatus = document.getElementById("mcp");
+            let registered = false;
+
+            setInterval(() => {
+            const mc = navigator.modelContext || document.modelContext || window.modelContext;
+            mcpStatus.textContent = mc
+                ? `✅ WebMCP 已就緒（來源：${
+                    navigator.modelContext ? "navigator" :
+                    document.modelContext ? "document" : "window"
+                    }）`
+                : "❌ WebMCP 不可用";
+            if (!mc || registered) return;
+            registered = true;
+
+            mc.registerTool({
+                name: "add_item",
+                description: "在這個多人共享的清單上新增一個項目。所有成員都會即時看到。",
+                inputSchema: {
+                type: "object",
+                properties: {
+                    text: { type: "string", description: "要新增的項目內容" }
+                },
+                required: ["text"]
+                },
+                execute: ({ text }) => ({
+                content: [{ type: "text", text: addItem(text) }]
+                })
+            });
+
+            mc.registerTool({
+                name: "list_items",
+                description: "讀取這個多人共享清單目前的所有項目。新增或修改前先呼叫這個來了解現況。",
+                inputSchema: { type: "object", properties: {} },
+                execute: () => ({
+                content: [{
+                    type: "text",
+                    text: items.length
+                    ? `目前有 ${items.length} 個項目：\n${items.map(i => "- " + i).join("\n")}`
+                    : "清單目前是空的。"
+                }]
+                })
+            });
+            }, 500);
+        </script>
+    </body>
+</html>
