@@ -7,271 +7,414 @@
     <title>CoPlan — Multiplayer itinerary planning with your own AI agent</title>
     <style>
       :root {
-        --bg: #f6f7f9;
-        --panel: #ffffff;
-        --ink: #14181f;
-        --muted: #6b7280;
-        --line: #e5e7eb;
-        --accent: #2563eb;
-        --warn: #b45309;
-        --warn-bg: #fef3c7;
-        --danger: #dc2626;
+        /* 中性 */
+        --bg:        #f7f7f5;
+        --panel:     #ffffff;
+        --panel-2:   #fbfbfa;
+        --ink:       #1f2328;
+        --ink-2:     #4b5563;
+        --muted:     #8b8f96;
+        --line:      #e6e6e3;
+        --line-2:    #f0f0ee;
+
+        /* 語意 */
+        --accent:    #5b5bd6;
+        --accent-bg: #eeeefc;
+        --warn:      #b45309;
+        --warn-bg:   #fef3c7;
+        --danger:    #dc2626;
         --danger-bg: #fef2f2;
-        --ok: #16a34a;
-        --radius: 10px;
+        --ok:        #15803d;
+        --ok-bg:     #ecfdf3;
+
+        /* 尺寸 */
+        --r-card: 8px;
+        --r-ctrl: 6px;
+        --r-pill: 999px;
+        --hour-height: 56px;
+        --gutter-width: 52px;
       }
 
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #0f1216;
-          --panel: #171b21;
-          --ink: #e8eaed;
-          --muted: #9aa3ae;
-          --line: #262c34;
-          --warn-bg: #3a2c0a;
+          --bg:        #0e0f11;
+          --panel:     #17181b;
+          --panel-2:   #131417;
+          --ink:       #e8e8ea;
+          --ink-2:     #b6b9bf;
+          --muted:     #797d85;
+          --line:      #26272b;
+          --line-2:    #1e1f23;
+          --accent:    #7b7bf0;
+          --accent-bg: #1e1e3a;
+          --warn:      #d97706;
+          --warn-bg:   #3a2c0a;
+          --danger:    #f87171;
           --danger-bg: #3a1414;
+          --ok:        #4ade80;
+          --ok-bg:     #0f2a1a;
         }
       }
 
       * { box-sizing: border-box; }
-
       html, body { height: 100%; margin: 0; }
+      h1, h2, h3, p, fieldset, legend { margin: 0; padding: 0; border: none; }
 
       body {
         background: var(--bg);
         color: var(--ink);
-        font-family: system-ui, -apple-system, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
-        font-size: 15px;
+        font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC",
+                     "Microsoft JhengHei", sans-serif;
+        font-size: 14px;
         line-height: 1.5;
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-      }
-
-      h1, h2, h3, p, fieldset, legend { margin: 0; padding: 0; border: none; }
-
-      /* ── 標題列 ── */
-      .topbar {
-        flex: 0 0 auto;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--line);
-      }
-      .topbar-left { display: flex; align-items: baseline; gap: 8px; }
-      .brand { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
-      .room-id { color: var(--muted); font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 13px; }
-
-      /* ── 三欄版面 ── */
-      .layout {
-        flex: 1 1 auto;
-        min-height: 0;
-        display: grid;
-        grid-template-columns: 260px 1fr 340px;
-        gap: 12px;
-        padding: 12px;
-      }
-      .col { min-height: 0; overflow-y: auto; }
-
-      .panel {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 16px;
-      }
-
-      .section-title {
-        font-size: 13px;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--muted);
-        font-weight: 600;
-        margin: 0 0 8px;
-      }
-
-      /* ── 按鈕與表單元素 ── */
-      .btn {
-        padding: 8px 12px;
-        border-radius: 8px;
-        cursor: pointer;
-        font: inherit;
-        transition: filter 0.1s;
-      }
-      .btn:hover { filter: brightness(0.97); }
-      .btn-primary { background: var(--accent); color: #fff; border: none; }
-      .btn-secondary { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
-
-      select, input {
-        padding: 8px 10px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--bg);
-        color: var(--ink);
-        font: inherit;
       }
 
       .tabular-nums { font-variant-numeric: tabular-nums; }
 
-      /* ── 左欄 ── */
-      .status-group { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
-      .pill { display: inline-block; font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
-      .pill.ok { color: var(--ok); }
-      .pill.bad { color: var(--danger); }
-
-      .side-section { margin-bottom: 20px; }
-      .side-section:last-child { margin-bottom: 0; }
-
-      .members-list { display: flex; flex-wrap: wrap; gap: 4px 10px; }
-      .member-tag { font-weight: 700; }
-
-      .agent-notice { font-size: 12px; line-height: 1.4; color: var(--muted); margin: 8px 0 0; }
-
-      .budget-form { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-      .budget-form label { font-size: 13px; color: var(--muted); }
-      .budget-form input { width: 100px; }
-      .budget-status { font-size: 13px; margin-bottom: 12px; }
-
-      /* ── 中欄：新增表單 ── */
-      .add-form { margin-bottom: 12px; }
-      .add-form-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-      #title { flex: 1 1 160px; }
-
-      /* ── 中欄：待確認結帳請求 ── */
-      .approval-box {
-        border: 2px solid var(--accent);
-        background: color-mix(in srgb, var(--accent) 8%, var(--panel));
-        border-radius: var(--radius);
-        padding: 12px;
-        margin-bottom: 12px;
-      }
-      .approval-box.over-budget {
-        border-color: var(--danger);
-        background: var(--danger-bg);
-      }
-      .approval-box .approval-text { font-size: 15px; }
-      .approval-box .approval-note { color: var(--muted); font-size: 13px; }
-      .approval-box .approval-actions { margin-top: 8px; display: flex; gap: 8px; }
-      .approval-box .waiting { color: var(--muted); font-size: 13px; }
-
-      /* ── 中欄：行程表 ── */
-      .board { display: flex; flex-direction: column; gap: 16px; }
-      .day-section h3 { margin-bottom: 8px; }
-      .empty-day {
-        border: 1px dashed var(--line);
-        border-radius: var(--radius);
+      .section-title {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .07em;
         color: var(--muted);
-        font-size: 13px;
-        text-align: center;
-        padding: 16px;
-      }
-      .empty-board { color: var(--muted); text-align: center; padding: 40px 16px; }
-
-      .card {
-        border: 1px solid var(--line);
-        background: var(--panel);
-        border-radius: var(--radius);
-        padding: 10px 12px;
         margin-bottom: 8px;
       }
-      .card.conflict { border-color: var(--warn); background: var(--warn-bg); }
-      .card-row1 { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-      .card-row1 input[type="time"] { width: 92px; padding: 4px 6px; font-size: 13px; }
-      .card-title { font-size: 15px; font-weight: 700; flex: 1 1 auto; }
-      .card-row2 { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
-      .card-row2 .proposer { font-weight: 700; }
-      .card-row2 .price-input { width: 80px; padding: 4px 6px; font-size: 13px; margin-left: auto; }
-      .card-paid { color: var(--ok); font-size: 13px; white-space: nowrap; }
-      .card-del { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--muted); padding: 0 0 0 4px; }
-      .card-del:hover { color: var(--danger); }
-      .card-warn { color: var(--warn); font-size: 13px; margin-top: 4px; }
 
-      /* ── 右欄：活動時間軸 ── */
-      .log-entry { border-bottom: 1px solid var(--line); padding: 6px 0; font-size: 13px; }
+      /* ── 按鈕 ── */
+      .btn { padding: 7px 12px; border-radius: var(--r-ctrl); font: inherit; font-size: 13px;
+             cursor: pointer; border: 1px solid transparent; }
+      .btn-primary   { background: var(--accent); color: #fff; }
+      .btn-secondary { background: var(--panel); color: var(--ink); border-color: var(--line); }
+      .btn-danger    { background: var(--panel); color: var(--danger); border-color: var(--line); }
+      .btn:hover     { filter: brightness(0.97); }
+      .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+      /* ── 表單元素 ── */
+      input, select { padding: 6px 9px; border: 1px solid var(--line); border-radius: var(--r-ctrl);
+                      background: var(--panel); color: var(--ink); font: inherit; font-size: 13px; }
+      input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+      /* ── ① 標題列 ── */
+      .app { display: flex; flex-direction: column; height: 100vh; }
+      /* min-height + wrap，理由同 .toolbar：多一顆語言按鈕後，375px 下固定高度會撐出橫向捲動。 */
+      .topbar {
+        flex: 0 0 auto; min-height: 52px;
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 8px 16px; flex-wrap: wrap;
+        padding: 6px 16px; border-bottom: 1px solid var(--line);
+      }
+      .topbar-left { display: flex; align-items: baseline; gap: 8px; }
+      .brand { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+      .room-label { font-size: 12px; color: var(--muted); font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; }
+      .status-area { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; }
+      .status-dot { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+      .status-dot::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
+      .status-dot.ok { color: var(--ok); }
+      .status-dot.bad { color: var(--danger); }
+
+      /* ── ② 工具列 ── */
+      .toolbar {
+        flex: 0 0 auto; min-height: 48px;
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 16px; padding: 6px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap;
+      }
+      .travelers { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .travelers-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+      .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line);
+              border-radius: var(--r-pill); padding: 3px 10px; font-size: 12px; }
+      .chip-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+      .budget-area { display: flex; align-items: center; gap: 12px; }
+      .budget-summary-btn, .set-budget-link {
+        background: none; border: none; padding: 0; font: inherit; font-size: 13px; cursor: pointer; color: var(--ink);
+      }
+      .set-budget-link { color: var(--accent); text-decoration: underline; }
+      .budget-input { width: 100px; }
+
+      .agent-notice { font-size: 11px; color: var(--muted); padding: 6px 16px; border-bottom: 1px solid var(--line); }
+
+      /* ── 主體 ── */
+      .main { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1fr 340px; gap: 12px; padding: 12px; }
+      .left, .right { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+
+      /* ── ③ 待確認結帳橫幅 ── */
+      .approval-banner { border: 1px solid var(--accent); background: var(--accent-bg); border-radius: var(--r-card); padding: 12px; }
+      .approval-banner.over-budget { border-color: var(--danger); background: var(--danger-bg); }
+      .approval-banner .line1 { font-size: 14px; margin-bottom: 4px; }
+      .approval-banner .line2 { font-size: 12px; color: var(--ink-2); margin-bottom: 8px; }
+      .approval-banner .actions { display: flex; gap: 8px; }
+      .approval-banner .room-url {
+        font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+        background: var(--panel-2); border-radius: var(--r-ctrl); padding: 2px 6px; font-size: 12px;
+        display: inline-block; margin-top: 2px; word-break: break-all;
+      }
+
+      /* ── ④ 新增行程工具列 ── */
+      .add-toolbar {
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r-card); padding: 8px;
+      }
+      .add-toolbar #title { flex: 1 1 200px; }
+
+      /* ── ⑤ 日程網格 ── */
+      .grid-wrap { border: 1px solid var(--line); border-radius: var(--r-card); background: var(--panel); overflow: hidden; }
+      .grid-body { position: relative; display: flex; }
+      .day-block { flex: 1 1 0; min-width: 200px; display: flex; flex-direction: column; }
+      .day-label {
+        font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+        text-align: center; padding: 8px 0; background: var(--panel-2); border-bottom: 1px solid var(--line);
+      }
+      .day-row { display: flex; flex: 1 1 auto; }
+      .gutter { width: var(--gutter-width); flex: 0 0 auto; position: relative; border-right: 1px solid var(--line); }
+      /* 桌機只讓第一欄的時間刻度可見，其餘欄位保留同樣寬度但內容隱藏——
+         這樣三個日欄仍然等寬，視覺上又像共用同一條時間軸。窄螢幕改回全部顯示（見下方媒體查詢）。 */
+      .day-block:not(:first-child) .gutter { visibility: hidden; }
+      .tick { position: absolute; right: 8px; transform: translateY(-50%); font-size: 11px; color: var(--muted); white-space: nowrap; }
+      .day-col { flex: 1 1 0; min-width: 200px; position: relative; }
+      .hour-line { position: absolute; left: 0; right: 0; height: 1px; background: var(--line-2); }
+
+      .block {
+        position: absolute; display: block; text-align: left;
+        border: 1px solid var(--line); background: var(--panel); border-radius: var(--r-ctrl);
+        padding: 4px 6px; overflow: hidden; cursor: pointer; font: inherit; font-size: 12px; color: inherit;
+      }
+      .block:hover { filter: brightness(0.98); }
+      .block:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .block.conflict { border-color: var(--warn); background: var(--warn-bg); border-left: 3px solid var(--warn); padding-left: 4px; }
+      .block.selected { border: 2px solid var(--accent); }
+      .block.paid { opacity: 0.75; }
+      .block-title { font-size: 13.5px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .block-meta { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); margin-top: 2px; }
+      .block-dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
+      .block-price { position: absolute; right: 4px; bottom: 4px; font-size: 11px; background: var(--panel-2); border-radius: var(--r-ctrl); padding: 1px 5px; }
+      .block-paid-mark { position: absolute; right: 4px; top: 2px; font-size: 11px; }
+      .block-conflict-mark { position: absolute; left: 4px; top: 2px; font-size: 11px; }
+      .block.conflict .block-title { margin-left: 14px; }
+
+      .grid-empty {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        text-align: center; padding: 16px; color: var(--muted); font-size: 13px; pointer-events: none;
+      }
+
+      /* ── ⑥ 右欄 ── */
+      .panel-box { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-card); padding: 12px; }
+      .edit-card .edit-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+      .edit-card .edit-title { font-size: 13.5px; font-weight: 550; margin-bottom: 8px; }
+      .edit-card .edit-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .edit-card .edit-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+      .close-x { background: none; border: none; cursor: pointer; font-size: 14px; color: var(--muted); padding: 0; }
+      .close-x:hover { color: var(--ink); }
+      .paid-tag { color: var(--ok); font-size: 12px; }
+
+      .log-entry { padding: 6px 0; border-bottom: 1px solid var(--line-2); font-size: 12px; }
       .log-entry:last-child { border-bottom: none; }
+      .log-entry.warn-row { color: var(--warn); }
+      .log-line1 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
       .log-time { color: var(--muted); }
-      .log-action { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; background: var(--bg); padding: 1px 4px; border-radius: 4px; }
-      .log-summary { display: block; color: var(--muted); }
-      .empty-timeline { color: var(--muted); font-size: 13px; text-align: center; padding: 20px; }
+      .log-action { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; background: var(--panel-2);
+                     border-radius: var(--r-ctrl); padding: 1px 5px; font-size: 11px; }
+      .log-summary { display: block; color: var(--ink-2); margin-top: 2px; }
+      .empty-timeline { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
 
-      /* ── 窄螢幕：單欄堆疊 ── */
-      @media (max-width: 1100px) {
-        body { height: auto; }
-        .layout { display: flex; flex-direction: column; height: auto; }
-        .col { overflow-y: visible; }
-        .col-center { order: 1; }
-        .col-left { order: 2; }
-        .col-right { order: 3; }
+      /* ── 窄螢幕 ── */
+      @media (max-width: 1000px) {
+        .app { height: auto; }
+        .main { grid-template-columns: 1fr; height: auto; }
+        .left, .right { overflow-y: visible; }
+        .grid-body { flex-direction: column; }
+        .day-block:not(:first-child) .gutter { visibility: visible; }
       }
     </style>
   </head>
   <body>
-    <header class="topbar">
-      <div class="topbar-left">
-        <span class="brand">CoPlan</span>
-        <span class="room-id" id="roomIdLabel"></span>
-      </div>
-      <button id="copyInvite" class="btn btn-secondary">Copy invite link</button>
-    </header>
+    <div class="app">
+      <header class="topbar">
+        <div class="topbar-left">
+          <span class="brand">CoPlan</span>
+          <span class="room-label" id="roomIdLabel"></span>
+        </div>
+        <div class="status-area">
+          <span id="status" class="status-dot">Connecting…</span>
+          <span id="mcp" class="status-dot">Detecting WebMCP…</span>
+          <button id="langToggle" class="btn btn-secondary" aria-label="Switch language">中文</button>
+          <button id="copyInvite" class="btn btn-secondary">Copy invite link</button>
+        </div>
+      </header>
 
-    <div class="layout">
-      <aside class="col col-left panel">
-        <div class="status-group">
-          <p id="status" class="pill">Connecting…</p>
-          <p id="mcp" class="pill">Detecting WebMCP…</p>
+      <div class="toolbar">
+        <div class="travelers">
+          <span class="travelers-label" data-i18n="travelers">Travelers</span>
+          <span id="members"></span>
+        </div>
+        <div class="budget-area">
+          <span id="budgetStatus" class="tabular-nums"></span>
+          <button id="checkout" class="btn btn-primary" data-i18n="checkout">Checkout</button>
+        </div>
+      </div>
+      <p class="agent-notice" data-i18n="agentNotice">Tools exposed to your agent can read this room's itinerary. Anything here may be sent to your agent provider.</p>
+
+      <div class="main">
+        <div class="left">
+          <div id="approvals"></div>
+
+          <div class="add-toolbar">
+            <select id="type" aria-label="Activity type" data-i18n-aria="activityType">
+              <option value="Sight" data-i18n="typeSight">Sight</option>
+              <option value="Food" data-i18n="typeFood">Food</option>
+              <option value="Transit" data-i18n="typeTransit">Transit</option>
+              <option value="Stay" data-i18n="typeStay">Stay</option>
+            </select>
+            <select id="day" aria-label="Day" data-i18n-aria="dayLabel">
+              <option value="1" data-i18n="day1">Day 1</option>
+              <option value="2" data-i18n="day2">Day 2</option>
+              <option value="3" data-i18n="day3">Day 3</option>
+            </select>
+            <input id="start" type="time" value="09:00" aria-label="Start time" data-i18n-aria="startTime" />
+            <input id="end" type="time" value="11:00" aria-label="End time" data-i18n-aria="endTime" />
+            <input id="title" placeholder="Activity title" aria-label="Activity title" data-i18n-aria="activityTitle" data-i18n-placeholder="activityTitle" />
+            <button id="add" class="btn btn-primary" data-i18n="add">Add</button>
+          </div>
+
+          <div class="grid-wrap">
+            <div class="grid-body" id="gridBody"></div>
+          </div>
         </div>
 
-        <section class="side-section">
-          <h2 class="section-title">Travelers</h2>
-          <p id="members" class="members-list"></p>
-          <p class="agent-notice">Tools exposed to your agent can read this room's itinerary. Anything here may be sent to your agent provider.</p>
-        </section>
-
-        <section class="side-section">
-          <h2 class="section-title">My Budget</h2>
-          <div class="budget-form">
-            <label for="budget">Budget limit NT$</label>
-            <input id="budget" type="number" min="0" step="1000" />
-            <button id="setBudget" class="btn btn-secondary">Set</button>
+        <div class="right">
+          <div id="editCard"></div>
+          <div class="panel-box">
+            <h2 class="section-title" data-i18n="activitySection">Activity</h2>
+            <div id="timeline"></div>
           </div>
-          <p id="budgetStatus" class="budget-status tabular-nums"></p>
-          <button id="checkout" class="btn btn-primary">Checkout</button>
-        </section>
-      </aside>
-
-      <main class="col col-center">
-        <fieldset class="panel add-form">
-          <legend class="section-title">Add Activity</legend>
-          <div class="add-form-row">
-            <select id="type" aria-label="Activity type">
-              <option>Sight</option>
-              <option>Food</option>
-              <option>Transit</option>
-              <option>Stay</option>
-            </select>
-            <select id="day" aria-label="Day">
-              <option value="1">Day 1</option>
-              <option value="2">Day 2</option>
-              <option value="3">Day 3</option>
-            </select>
-            <input id="start" type="time" value="09:00" aria-label="Start time" />
-            <input id="end" type="time" value="11:00" aria-label="End time" />
-            <input id="title" placeholder="Activity title" aria-label="Activity title" />
-            <button id="add" class="btn btn-primary">Add</button>
-          </div>
-        </fieldset>
-
-        <div id="approvals"></div>
-        <div id="board" class="board"></div>
-      </main>
-
-      <aside class="col col-right panel">
-        <h2 class="section-title">Agent Activity Timeline</h2>
-        <div id="timeline"></div>
-      </aside>
+        </div>
+      </div>
     </div>
 
     <script>
+        // ═══ ⓪ 介面語言（中／英）═══
+        //
+        // 只切「畫面上給人看的字」。刻意不翻的三類：
+        //  1. WebMCP 工具的 name／description／inputSchema —— 那是給 Agent 讀的協定表面，
+        //     翻了等於改工具定義（不可破壞清單第 1 條），也會讓英文 Agent 選錯工具。
+        //  2. 工具 execute() 回傳給 Agent 的字串 —— 同上，Agent 自己會用使用者的語言回話。
+        //  3. 時間軸的 action 代碼（add_activity 等）—— 那是稽核代碼，不是文案。
+        // 存進伺服器的資料（type 值、成員名、行程標題）也一律維持原樣，換語言不會改變共享狀態。
+        const I18N = {
+          en: {
+            langToggleLabel: "中文", langToggleAria: "切換至中文",
+            roomLabel: (id) => `Room ${id}`,
+            connecting: "Connecting…", connected: "Connected", disconnected: "Disconnected",
+            mcpDetecting: "Detecting WebMCP…", mcpReady: "WebMCP ready", mcpUnavailable: "WebMCP unavailable",
+            copyInvite: "Copy invite link", copied: "Copied",
+            travelers: "Travelers", checkout: "Checkout",
+            agentNotice: "Tools exposed to your agent can read this room's itinerary. Anything here may be sent to your agent provider.",
+            typeSight: "Sight", typeFood: "Food", typeTransit: "Transit", typeStay: "Stay",
+            day1: "Day 1", day2: "Day 2", day3: "Day 3",
+            dayOf: (d) => `Day ${d}`,
+            activityType: "Activity type", dayLabel: "Day",
+            startTime: "Start time", endTime: "End time", activityTitle: "Activity title",
+            add: "Add", activitySection: "Activity",
+            gridEmpty: "No plans yet. Add one above, or ask your agent to help plan.",
+            selectedActivity: "Selected Activity", close: "Close",
+            price: "Price", paidTag: "✅ Paid", remove: "Remove", removeAria: "Remove this activity",
+            emptyTimeline: "No activity yet.",
+            agentPossessive: "'s Agent",
+            setBudget: "Set budget", budgetAria: "Budget limit NT$",
+            pending: "Pending", overBudget: "⚠️ Over budget", overBudgetLimit: "⚠️ Over budget limit",
+            requesterName: (name) => name, requesterAgent: (name) => `${name}'s Agent`,
+            requestedCheckout: "requested checkout of",
+            itemCount: (n) => `${n} ${n === 1 ? "item" : "items"}`,
+            lockLine: "🔒 For your protection, <b>the device that requested this payment cannot approve it</b>.<br>\n                        Open this room on your phone or another device, or ask a fellow traveler to approve:<br>",
+            cancelRequest: "Cancel this request",
+            fromAnotherDevice: "This request came from another device. You can approve it here.",
+            approvePayment: "Approve payment", decline: "Decline",
+          },
+          zh: {
+            langToggleLabel: "EN", langToggleAria: "Switch to English",
+            roomLabel: (id) => `房間 ${id}`,
+            connecting: "連線中…", connected: "已連線", disconnected: "已斷線",
+            mcpDetecting: "偵測 WebMCP 中…", mcpReady: "WebMCP 就緒", mcpUnavailable: "WebMCP 無法使用",
+            copyInvite: "複製邀請連結", copied: "已複製",
+            travelers: "旅伴", checkout: "結帳",
+            agentNotice: "開放給你的 Agent 的工具可以讀取這個房間的行程。這裡的內容可能會被送到你的 Agent 服務商。",
+            typeSight: "景點", typeFood: "餐飲", typeTransit: "交通", typeStay: "住宿",
+            day1: "第 1 天", day2: "第 2 天", day3: "第 3 天",
+            dayOf: (d) => `第 ${d} 天`,
+            activityType: "行程類型", dayLabel: "天數",
+            startTime: "開始時間", endTime: "結束時間", activityTitle: "行程名稱",
+            add: "新增", activitySection: "活動紀錄",
+            gridEmpty: "還沒有任何行程。用上方表單新增，或請你的 Agent 幫忙規劃。",
+            selectedActivity: "選取的行程", close: "關閉",
+            price: "金額", paidTag: "✅ 已付款", remove: "刪除", removeAria: "刪除這筆行程",
+            emptyTimeline: "還沒有任何動作。",
+            agentPossessive: " 的 Agent",
+            setBudget: "設定預算", budgetAria: "預算上限 NT$",
+            pending: "待付", overBudget: "⚠️ 超出預算", overBudgetLimit: "⚠️ 超出預算上限",
+            requesterName: (name) => name, requesterAgent: (name) => `${name} 的 Agent`,
+            requestedCheckout: "要求結帳",
+            itemCount: (n) => `${n} 筆`,
+            lockLine: "🔒 為了保護你，<b>發出這筆付款請求的裝置不能自己確認</b>。<br>\n                        請用手機或另一台裝置開啟這個房間，或請同行旅伴確認：<br>",
+            cancelRequest: "取消這筆請求",
+            fromAnotherDevice: "這筆請求來自另一台裝置，你可以在這裡確認。",
+            approvePayment: "確認付款", decline: "拒絕",
+          },
+        };
+
+        let lang = "en";
+        try { const saved = localStorage.getItem("coplan-lang"); if (saved === "zh" || saved === "en") lang = saved; } catch (e) {}
+
+        function t(key, ...args) {
+          const v = I18N[lang][key];
+          return typeof v === "function" ? v(...args) : v;
+        }
+
+        // 伺服器（src/index.js）產生的時間軸摘要是英文樣板字串，而 src/index.js 不能動。
+        // 這裡在前端用樣式比對翻成中文，數字與使用者輸入的標題原樣帶過去。
+        // 比對不到就原樣顯示英文 —— 之後若伺服器新增訊息類型，畫面只會退回英文，不會壞掉。
+        const SUMMARY_RULES = [
+          [/^(.+) joined the trip$/, (m) => `${m[1]} 加入了行程`],
+          [/^Itinerary is at its (\d+)-item limit — this item was not added$/, (m) => `行程已達 ${m[1]} 筆上限，這筆沒有加入`],
+          [/^Added "(.*)" to Day (\d+) (.+)$/, (m) => `已新增「${m[1]}」到第 ${m[2]} 天 ${m[3]}`],
+          [/^Updated "(.*)" to Day (\d+) (.+)$/, (m) => `已將「${m[1]}」改到第 ${m[2]} 天 ${m[3]}`],
+          [/^Removed "(.*)"$/, (m) => `已刪除「${m[1]}」`],
+          [/^Set budget limit to NT\$(.+)$/, (m) => `已將預算上限設為 NT$${m[1]}`],
+          [/^This device already has a pending checkout request — approve or cancel it before requesting another$/, () => "這台裝置已經有一筆待確認的結帳請求，請先確認或取消再送出新的"],
+          [/^Too many pending checkout requests in this room right now — try again once one is resolved$/, () => "這個房間目前待確認的結帳請求太多，等其中一筆處理完再試"],
+          [/^Requested checkout of NT\$(.+) \((\d+) items?\), pending approval$/, (m) => `要求結帳 NT$${m[1]}（${m[2]} 筆），等待確認`],
+          [/^Approval blocked: the device that requested checkout cannot approve it\. Approve from another device or member\.$/, () => "確認被擋下：發出結帳請求的裝置不能自己確認，請改用另一台裝置或由其他成員確認。"],
+          [/^Approved payment of NT\$(.+) \(demo mode, no real payment processor connected\)$/, (m) => `已確認付款 NT$${m[1]}（demo 模式，未接真實金流）`],
+          [/^Room reset — itinerary, timeline and pending approvals cleared$/, () => "房間已重置，行程、時間軸與待確認請求都已清空"],
+          [/^Declined the checkout request for NT\$(.+)$/, (m) => `已拒絕 NT$${m[1]} 的結帳請求`],
+        ];
+
+        function localizeSummary(summary) {
+          if (lang === "en") return summary;
+          for (const [re, fn] of SUMMARY_RULES) {
+            const m = String(summary).match(re);
+            if (m) return fn(m);
+          }
+          return summary;
+        }
+
+        // 換語言只重繪畫面，不重新註冊工具、不送任何訊息給伺服器。
+        function applyLang() {
+          document.documentElement.lang = lang === "zh" ? "zh-Hant" : "en";
+          for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = t(el.dataset.i18n);
+          for (const el of document.querySelectorAll("[data-i18n-aria]")) el.setAttribute("aria-label", t(el.dataset.i18nAria));
+          for (const el of document.querySelectorAll("[data-i18n-placeholder]")) el.placeholder = t(el.dataset.i18nPlaceholder);
+          const toggle = document.getElementById("langToggle");
+          toggle.textContent = t("langToggleLabel");
+          toggle.setAttribute("aria-label", t("langToggleAria"));
+          document.getElementById("roomIdLabel").textContent = t("roomLabel", roomId);
+          document.getElementById("copyInvite").textContent = t("copyInvite");
+          renderStatus();
+          renderMcpStatus();
+          render();
+          renderLog();
+          renderBudget();
+          renderApprovals();
+          renderEditCard();
+        }
+
         // ═══ ① 連線層 ═══
             // ═══ ① 從網址讀房號與身分 ═══
         // 網址格式：/r/<房號>?as=<暱稱>   例如 /r/tokyo?as=Cindy
@@ -282,27 +425,36 @@
         // 這個瀏覽器分頁的身分。刻意每次載入重新產生、刻意不存 localStorage ——
         // 存了的話同一台電腦開新分頁會拿到同一個 id，「跨 session 確認」的保護就失效了。
         const sessionId = crypto.randomUUID();
-        document.getElementById("roomIdLabel").textContent = `Room ${roomId}`;
+        document.getElementById("roomIdLabel").textContent = t("roomLabel", roomId);
 
         const proto = location.protocol === "https:" ? "wss" : "ws";
         const ws = new WebSocket(`${proto}://${location.host}/api/room/${roomId}`);
 
 
         const status = document.getElementById("status");
-        const board = document.getElementById("board");
+        const gridBody = document.getElementById("gridBody");
         let items = [];
         let members = {};
         let log = [];
         let approvals = [];
+        let selectedId = null;
+        let budgetEditing = false;
+
+        // 連線狀態存成代碼而非直接寫字串，換語言時才能重新算出對應語言的文字。
+        let connState = "connecting";
+        function renderStatus() {
+            status.textContent = t(connState === "open" ? "connected" : connState === "closed" ? "disconnected" : "connecting");
+            status.className = "status-dot" + (connState === "open" ? " ok" : connState === "closed" ? " bad" : "");
+        }
 
         ws.onopen = () => {
-            status.textContent = "✅ Connected";
-            status.className = "pill ok";
+            connState = "open";
+            renderStatus();
             ws.send(JSON.stringify({ t: "join", name: me() }));
             };
         ws.onclose = () => {
-            status.textContent = "❌ Disconnected";
-            status.className = "pill bad";
+            connState = "closed";
+            renderStatus();
             };
         ws.onmessage = (event) => {
             const state = JSON.parse(event.data);
@@ -317,6 +469,7 @@
             renderMembers();
             renderBudget();
             renderApprovals();
+            renderEditCard();
             };
         // ═══ ② 身分：接縫函式，之後要換成登入只需改這裡 ═══
         const me = () => myName;
@@ -378,8 +531,8 @@
             .reduce((sum, a) => sum + Number(a.price), 0);
         }
 
-        // ═══ ⑥ 示範資料（?seed=1）與重置（?reset=1）═══
-        // 純前端流程，用既有的 add / remove / reject_checkout 訊息組成，不新增後端訊息類型、不動 src/index.js。
+        // ═══ 示範資料（?seed=1）與重置（?reset=1）═══
+        // 純前端流程，用既有的 add / reset_room 訊息組成，不新增後端訊息類型、不動 src/index.js。
         const DEMO_ITEMS = [
           { day: 1, start: "09:00", end: "11:00", type: "Sight", title: "Senso-ji Temple", createdBy: "Cindy" },
           { day: 1, start: "10:00", end: "12:00", type: "Sight", title: "Ueno Park", createdBy: "Bob" },
@@ -402,6 +555,13 @@
           if (new URLSearchParams(location.search).get("seed") !== "1") return;
           seedAttempted = true;
           if (currentItems.length > 0) return;
+
+          // 示範項目的作者也要送 join，不然 Travelers 清單只會顯示目前這個使用者，
+          // 但行程上明明有 Cindy／Bob 的項目——畫面會不一致，而「多人協作」正是這個作品要先讓人看懂的事。
+          const demoAuthors = [...new Set(DEMO_ITEMS.map(item => item.createdBy))];
+          for (const name of demoAuthors) {
+            ws.send(JSON.stringify({ t: "join", name }));
+          }
 
           for (const item of DEMO_ITEMS) {
             ws.send(JSON.stringify({
@@ -431,119 +591,286 @@
           history.replaceState(null, "", location.pathname + (qs ? `?${qs}` : ""));
         }
 
-        // ═══ ④ 畫面 ═══
-        function render() {
-            board.innerHTML = "";
+        // ═══ ④ 畫面：日程網格 ═══
+        // 前端自己的時間換算，跟 src/index.js 的 toMinutes 邏輯一致但各自獨立（前後端沒有共用模組）。
+        function toMinutes(hhmm) {
+          const [h, m] = String(hhmm).split(":").map(Number);
+          return h * 60 + m;
+        }
 
-            if (items.length === 0) {
-                board.innerHTML = `<p class="empty-board">No plans yet. Add one with the form above, or ask your agent to help plan.</p>`;
-                return;
+        const HOUR_HEIGHT = 56; // 必須跟 CSS 的 --hour-height 保持一致
+
+        // 動態計算網格的時間範圍：見 docs/DESIGN-V2.md §5⑤
+        function computeTimeRange(allItems) {
+          if (allItems.length === 0) return { startMin: 9 * 60, endMin: 18 * 60 };
+          let minStart = Infinity, maxEnd = -Infinity;
+          for (const a of allItems) {
+            minStart = Math.min(minStart, toMinutes(a.start));
+            maxEnd = Math.max(maxEnd, toMinutes(a.end));
+          }
+          let startMin = Math.max(8 * 60, Math.floor(minStart / 60) * 60);
+          let endMin = Math.min(23 * 60, Math.ceil(maxEnd / 60) * 60);
+          if (endMin - startMin < 6 * 60) {
+            endMin = Math.min(23 * 60, startMin + 6 * 60);
+            if (endMin - startMin < 6 * 60) startMin = Math.max(0, endMin - 6 * 60);
+          }
+          return { startMin, endMin };
+        }
+
+        // 把同一天內時間重疊的行程分成群組（傳遞性：A 與 B 重疊、B 與 C 重疊 → 三者同群）。
+        // 直接用伺服器算好的 conflictWith 當作重疊圖的邊，找連通元件即可，不用重新算一次重疊判斷。
+        function groupOverlaps(dayItems) {
+          const byId = new Map(dayItems.map(a => [a.id, a]));
+          const visited = new Set();
+          const groups = [];
+          for (const a of dayItems) {
+            if (visited.has(a.id)) continue;
+            const stack = [a.id];
+            const group = [];
+            visited.add(a.id);
+            while (stack.length) {
+              const id = stack.pop();
+              const item = byId.get(id);
+              group.push(item);
+              for (const nid of (item.conflictWith || [])) {
+                if (!visited.has(nid) && byId.has(nid)) {
+                  visited.add(nid);
+                  stack.push(nid);
+                }
+              }
+            }
+            groups.push(group);
+          }
+          return groups;
+        }
+
+        function buildBlock(a, startMin, pxPerMin, n, i) {
+          const top = (toMinutes(a.start) - startMin) * pxPerMin;
+          const height = Math.max((toMinutes(a.end) - toMinutes(a.start)) * pxPerMin, 36);
+          const conflicted = a.conflictWith && a.conflictWith.length > 0;
+
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "block"
+            + (conflicted ? " conflict" : "")
+            + (a.id === selectedId ? " selected" : "")
+            + (a.paid ? " paid" : "");
+          btn.style.top = `${top}px`;
+          btn.style.height = `${height}px`;
+          btn.style.width = `calc((100% - 8px) / ${n})`;
+          btn.style.left = `${i * (100 / n)}%`;
+          // title 屬性當 tooltip：方塊太矮時只顯示標題一行，其餘資訊靠這裡補
+          btn.title = `${a.title} (${a.start}–${a.end})`;
+          btn.onclick = () => { selectedId = a.id; render(); renderEditCard(); };
+
+          // 用 DOM API（textContent／append 字串）而不是 innerHTML 組這個方塊，
+          // 字串一律變成文字節點、天生不會被當 HTML 解析，不需要另外 esc()。
+          const titleEl = document.createElement("div");
+          titleEl.className = "block-title";
+          titleEl.textContent = a.title;
+          btn.appendChild(titleEl);
+
+          if (height >= 48) {
+            const meta = document.createElement("div");
+            meta.className = "block-meta";
+            const timeSpan = document.createElement("span");
+            timeSpan.className = "tabular-nums";
+            timeSpan.textContent = `${a.start}–${a.end}`;
+            const dot = document.createElement("span");
+            dot.className = "block-dot";
+            dot.style.background = colorOf(a.createdBy);
+            const nameSpan = document.createElement("span");
+            nameSpan.textContent = a.createdBy;
+            const agentMark = document.createElement("span");
+            agentMark.textContent = a.viaAgent ? "🤖" : "🙋";
+            meta.append(timeSpan, dot, nameSpan, agentMark);
+            btn.appendChild(meta);
+
+            if (Number(a.price) > 0) {
+              const priceChip = document.createElement("span");
+              priceChip.className = "block-price tabular-nums";
+              priceChip.textContent = `NT$${Number(a.price).toLocaleString()}`;
+              btn.appendChild(priceChip);
+            }
+          }
+
+          // 顏色不是唯一的資訊來源：衝突與已付款都額外保留符號標記，不管方塊高不高。
+          if (a.paid) {
+            const paidMark = document.createElement("span");
+            paidMark.className = "block-paid-mark";
+            paidMark.textContent = "✅";
+            btn.appendChild(paidMark);
+          }
+          if (conflicted) {
+            const warnMark = document.createElement("span");
+            warnMark.className = "block-conflict-mark";
+            warnMark.textContent = "⚠️";
+            btn.appendChild(warnMark);
+          }
+
+          return btn;
+        }
+
+        function render() {
+            gridBody.innerHTML = "";
+
+            const { startMin, endMin } = computeTimeRange(items);
+            const pxPerMin = HOUR_HEIGHT / 60;
+            const gridHeight = (endMin - startMin) * pxPerMin;
+
+            for (let d = 1; d <= 3; d++) {
+                const dayItems = items.filter(a => Number(a.day) === d);
+
+                const dayBlock = document.createElement("div");
+                dayBlock.className = "day-block";
+
+                const label = document.createElement("div");
+                label.className = "day-label";
+                label.textContent = t("dayOf", d);
+                dayBlock.appendChild(label);
+
+                const row = document.createElement("div");
+                row.className = "day-row";
+
+                const gutter = document.createElement("div");
+                gutter.className = "gutter";
+                gutter.style.height = `${gridHeight}px`;
+
+                const col = document.createElement("div");
+                col.className = "day-col";
+                col.style.height = `${gridHeight}px`;
+
+                for (let h = Math.ceil(startMin / 60); h * 60 <= endMin; h++) {
+                    const offset = (h * 60 - startMin) * pxPerMin;
+
+                    const tick = document.createElement("div");
+                    tick.className = "tick";
+                    tick.style.top = `${offset}px`;
+                    tick.textContent = `${String(h).padStart(2, "0")}:00`;
+                    gutter.appendChild(tick);
+
+                    const line = document.createElement("div");
+                    line.className = "hour-line";
+                    line.style.top = `${offset}px`;
+                    col.appendChild(line);
+                }
+
+                for (const group of groupOverlaps(dayItems)) {
+                    const sorted = [...group].sort((a, b) => a.start.localeCompare(b.start));
+                    sorted.forEach((a, i) => col.appendChild(buildBlock(a, startMin, pxPerMin, sorted.length, i)));
+                }
+
+                row.append(gutter, col);
+                dayBlock.appendChild(row);
+                gridBody.appendChild(dayBlock);
             }
 
-            for (const day of [1, 2, 3]) {
-                const dayItems = items
-                .filter(a => Number(a.day) === day)
-                .sort((a, b) => a.start.localeCompare(b.start));
-
-                const section = document.createElement("section");
-                section.className = "day-section";
-                section.innerHTML = `<h3 class="section-title">Day ${day}</h3>`;
-
-                if (dayItems.length === 0) {
-                section.innerHTML += `<p class="empty-day">Nothing planned</p>`;
-                }
-                    for (const a of dayItems) {
-                        const div = document.createElement("div");
-                        const conflicted = a.conflictWith && a.conflictWith.length > 0;
-                        div.className = "card" + (conflicted ? " conflict" : "");
-
-                        const row1 = document.createElement("div");
-                        row1.className = "card-row1";
-
-                        // 時間可直接編輯：改完送出，等伺服器廣播回來才重繪
-                        const startEl = document.createElement("input");
-                        startEl.type = "time";
-                        startEl.value = a.start;
-                        startEl.setAttribute("aria-label", "Start time");
-                        startEl.onchange = () => updateActivity(a.id, { start: startEl.value }, false);
-
-                        const endEl = document.createElement("input");
-                        endEl.type = "time";
-                        endEl.value = a.end;
-                        endEl.setAttribute("aria-label", "End time");
-                        endEl.onchange = () => updateActivity(a.id, { end: endEl.value }, false);
-
-                        const titleSpan = document.createElement("span");
-                        titleSpan.className = "card-title";
-                        titleSpan.textContent = a.title;
-
-                        row1.append(startEl, document.createTextNode("–"), endEl, titleSpan);
-
-                        const row2 = document.createElement("div");
-                        row2.className = "card-row2";
-                        row2.innerHTML = `[${esc(a.type)}]
-                            <span class="proposer" style="color:${colorOf(a.createdBy)}">${esc(a.createdBy)}</span>
-                            ${a.viaAgent ? "🤖" : "🙋"}`;
-
-                        // 價格欄位：填了價格就代表這個行程需要預訂，會進入結帳金額
-                        const priceEl = document.createElement("input");
-                        priceEl.type = "number";
-                        priceEl.min = "0";
-                        priceEl.placeholder = "Price";
-                        priceEl.value = a.price || "";
-                        priceEl.className = "price-input";
-                        priceEl.setAttribute("aria-label", "Price");
-                        priceEl.disabled = !!a.paid;
-                        priceEl.onchange = () => updateActivity(a.id, { price: Number(priceEl.value) }, false);
-                        row2.appendChild(priceEl);
-
-                        if (a.paid) {
-                            const paidTag = document.createElement("span");
-                            paidTag.className = "card-paid";
-                            paidTag.textContent = "✅ Paid";
-                            row2.appendChild(paidTag);
-                        }
-
-                        const del = document.createElement("button");
-                        del.textContent = "×";
-                        del.className = "card-del";
-                        del.setAttribute("aria-label", "Remove this activity");
-                        del.onclick = () => removeActivity(a.id, false);
-                        row2.appendChild(del);
-
-                        div.append(row1, row2);
-
-                        if (conflicted) {
-                            const warn = document.createElement("div");
-                            warn.className = "card-warn";
-                            warn.textContent = `⚠️ Overlaps with ${a.conflictWith.length} other ${a.conflictWith.length === 1 ? "item" : "items"}`;
-                            div.appendChild(warn);
-                        }
-
-                        section.appendChild(div);
-                    }
-                board.appendChild(section);
+            if (items.length === 0) {
+                const empty = document.createElement("div");
+                empty.className = "grid-empty";
+                empty.textContent = t("gridEmpty");
+                gridBody.appendChild(empty);
             }
         }
 
+        // 選取的行程編輯卡：方塊本身不再放輸入框，改集中在這裡編輯，網格才乾淨。
+        function renderEditCard() {
+            const el = document.getElementById("editCard");
+            el.innerHTML = "";
+            if (selectedId == null) return;
+
+            const a = items.find(x => x.id === selectedId);
+            if (!a) { selectedId = null; return; } // 廣播後被別人刪掉了，自動取消選取
+
+            const box = document.createElement("div");
+            box.className = "panel-box edit-card";
+
+            const head = document.createElement("div");
+            head.className = "edit-head";
+            const h = document.createElement("h2");
+            h.className = "section-title";
+            h.style.marginBottom = "0";
+            h.textContent = t("selectedActivity");
+            const closeBtn = document.createElement("button");
+            closeBtn.className = "close-x";
+            closeBtn.textContent = "×";
+            closeBtn.setAttribute("aria-label", t("close"));
+            closeBtn.onclick = () => { selectedId = null; render(); renderEditCard(); };
+            head.append(h, closeBtn);
+            box.appendChild(head);
+
+            const titleEl = document.createElement("div");
+            titleEl.className = "edit-title";
+            titleEl.textContent = a.title;
+            box.appendChild(titleEl);
+
+            const timeRow = document.createElement("div");
+            timeRow.className = "edit-row";
+            const startEl = document.createElement("input");
+            startEl.type = "time";
+            startEl.value = a.start;
+            startEl.setAttribute("aria-label", t("startTime"));
+            startEl.onchange = () => updateActivity(a.id, { start: startEl.value }, false);
+            const endEl = document.createElement("input");
+            endEl.type = "time";
+            endEl.value = a.end;
+            endEl.setAttribute("aria-label", t("endTime"));
+            endEl.onchange = () => updateActivity(a.id, { end: endEl.value }, false);
+            timeRow.append(startEl, document.createTextNode("–"), endEl);
+            box.appendChild(timeRow);
+
+            const priceRow = document.createElement("div");
+            priceRow.className = "edit-row";
+            const priceEl = document.createElement("input");
+            priceEl.type = "number";
+            priceEl.min = "0";
+            priceEl.placeholder = t("price");
+            priceEl.value = a.price || "";
+            priceEl.setAttribute("aria-label", t("price"));
+            priceEl.disabled = !!a.paid;
+            priceEl.onchange = () => updateActivity(a.id, { price: Number(priceEl.value) }, false);
+            priceRow.appendChild(priceEl);
+            if (a.paid) {
+                const paidTag = document.createElement("span");
+                paidTag.className = "paid-tag";
+                paidTag.textContent = t("paidTag");
+                priceRow.appendChild(paidTag);
+            }
+            box.appendChild(priceRow);
+
+            const actions = document.createElement("div");
+            actions.className = "edit-actions";
+            const removeBtn = document.createElement("button");
+            removeBtn.className = "btn btn-danger";
+            removeBtn.textContent = t("remove");
+            removeBtn.setAttribute("aria-label", t("removeAria"));
+            removeBtn.onclick = () => { removeActivity(a.id, false); selectedId = null; render(); renderEditCard(); };
+            actions.appendChild(removeBtn);
+            box.appendChild(actions);
+
+            el.appendChild(box);
+        }
 
         function renderLog() {
             const el = document.getElementById("timeline");
             el.innerHTML = "";
             if (log.length === 0) {
-                el.innerHTML = `<p class="empty-timeline">No activity yet</p>`;
+                el.innerHTML = `<p class="empty-timeline">${esc(t("emptyTimeline"))}</p>`;
                 return;
             }
             // 最新的排最上面
             for (const e of [...log].reverse()) {
                 const div = document.createElement("div");
-                div.className = "log-entry";
+                const warnRow = e.action.includes("conflict") || e.action === "approve_blocked";
+                div.className = "log-entry" + (warnRow ? " warn-row" : "");
                 const time = new Date(e.at).toLocaleTimeString("en-US", { hour12: false });
                 div.innerHTML = `
-                <span class="log-time tabular-nums">${time}</span>
-                <b style="color:${colorOf(e.who)}">${e.viaAgent ? "🤖 " + esc(e.who) + "'s Agent" : "🙋 " + esc(e.who)}</b>
-                <code class="log-action">${esc(e.action)}</code>
-                <span class="log-summary">${esc(e.summary)}</span>
+                <span class="log-line1">
+                  <span class="log-time tabular-nums">${time}</span>
+                  <b style="color:${colorOf(e.who)}">${e.viaAgent ? "🤖 " + esc(e.who) + t("agentPossessive") : "🙋 " + esc(e.who)}</b>
+                  <code class="log-action">${esc(e.action)}</code>
+                </span>
+                <span class="log-summary">${esc(localizeSummary(e.summary))}</span>
                 `;
                 el.appendChild(div);
             }
@@ -560,30 +887,55 @@
 
         function renderMembers() {
         const el = document.getElementById("members");
-        el.innerHTML = Object.values(members).map(m =>
-            `<span class="member-tag" style="color:${colorOf(m.name)}">● ${esc(m.name)}</span>`
-        ).join("");
+        el.innerHTML = Object.values(members).map(m => `
+            <span class="chip"><span class="chip-dot" style="background:${colorOf(m.name)}"></span>${esc(m.name)}</span>
+        `).join("");
         }
 
-        // 預算列：顯示我目前的待訂金額與上限，超支時標紅。
-        // 這裡的計算規則刻意與伺服器的 spentBy 一致，兩邊算出來必須相同。
+        // 預算摘要：點擊展開成 inline input，失焦或 Enter 送出。
+        // 保留原本「使用者正在編輯時不回填」的防護——編輯中就不重繪，避免打字打到一半被蓋掉。
         function renderBudget() {
             const el = document.getElementById("budgetStatus");
-            const budgetInput = document.getElementById("budget");
             const myBudget = Number(members[me()]?.budget) || 0;
+            const spent = mySpent();
 
-            // 只在使用者沒有正在編輯時才回填，避免打字打到一半被蓋掉
-            if (document.activeElement !== budgetInput) {
-                budgetInput.value = myBudget || "";
+            if (budgetEditing) {
+                const existingInput = el.querySelector("input");
+                if (existingInput && document.activeElement === existingInput) return;
+
+                el.innerHTML = "";
+                const input = document.createElement("input");
+                input.type = "number";
+                input.min = "0";
+                input.step = "1000";
+                input.value = myBudget || "";
+                input.className = "budget-input";
+                input.setAttribute("aria-label", t("budgetAria"));
+                const commit = () => { budgetEditing = false; setBudget(input.value, false); };
+                input.onblur = commit;
+                input.onkeydown = (e) => { if (e.key === "Enter") input.blur(); };
+                el.appendChild(input);
+                input.focus();
+                return;
             }
 
-            const spent = mySpent();
-            const over = myBudget > 0 && spent > myBudget;
-            el.innerHTML = myBudget
-                ? `Pending <b style="color:${over ? "var(--danger)" : "var(--ok)"}">NT$${spent.toLocaleString()}</b>
-                   / limit NT$${myBudget.toLocaleString()}
-                   ${over ? '<span style="color:var(--danger)">⚠️ Over budget</span>' : ""}`
-                : `Pending <b>NT$${spent.toLocaleString()}</b> (no budget limit set)`;
+            el.innerHTML = "";
+            if (myBudget) {
+                const over = spent > myBudget;
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "budget-summary-btn tabular-nums";
+                btn.innerHTML = `${esc(t("pending"))} <b style="color:${over ? "var(--danger)" : "var(--ok)"}">NT$${spent.toLocaleString()}</b> / NT$${myBudget.toLocaleString()}${over ? ` <span style="color:var(--danger)">${esc(t("overBudget"))}</span>` : ""}`;
+                btn.onclick = () => { budgetEditing = true; renderBudget(); };
+                el.appendChild(btn);
+            } else {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "set-budget-link";
+                btn.textContent = t("setBudget");
+                btn.onclick = () => { budgetEditing = true; renderBudget(); };
+                el.appendChild(btn);
+            }
         }
 
         // 待確認的結帳請求。
@@ -597,53 +949,53 @@
             el.innerHTML = "";
             for (const p of approvals) {
                 const box = document.createElement("div");
-                box.className = "approval-box" + (p.overBudget ? " over-budget" : "");
+                box.className = "approval-banner" + (p.overBudget ? " over-budget" : "");
 
                 // who 內含已組好的 HTML：requestedBy 在這裡就要 esc()，
                 // 之後插進 innerHTML 時不會、也不能再轉義一次。
                 const who = p.viaAgent === false ? `<b style="color:${colorOf(p.requestedBy)}">${esc(p.requestedBy)}</b>`
-                    : `🤖 <b style="color:${colorOf(p.requestedBy)}">${esc(p.requestedBy)}'s Agent</b>`;
+                    : `🤖 <b style="color:${colorOf(p.requestedBy)}">${esc(p.requestedBy)}${t("agentPossessive")}</b>`;
 
-                const text = document.createElement("div");
-                text.className = "approval-text";
-                text.innerHTML = `${who}
-                    requested checkout of <b class="tabular-nums">NT$${p.total.toLocaleString()}</b> (${p.itemIds.length} ${p.itemIds.length === 1 ? "item" : "items"})
-                    ${p.overBudget ? '<span style="color:var(--danger)">⚠️ Over budget limit</span>' : ""}`;
-                box.appendChild(text);
+                const line1 = document.createElement("div");
+                line1.className = "line1";
+                line1.innerHTML = `${who} ${esc(t("requestedCheckout"))} <b class="tabular-nums">NT$${p.total.toLocaleString()}</b> (${esc(t("itemCount", p.itemIds.length))})${p.overBudget ? ` <span style="color:var(--danger)">${esc(t("overBudgetLimit"))}</span>` : ""}`;
+                box.appendChild(line1);
 
                 const isRequester = p.requestedBySession === sessionId;
 
                 if (isRequester) {
                     // 發起的分頁：不建立確認按鈕，只說明該去哪裡確認。
-                    const note = document.createElement("div");
-                    note.className = "approval-note";
-                    note.innerHTML = `🔒 For your protection, <b>the device that requested this payment cannot approve it</b>.<br>
-                        Open this room on your phone or another device, or ask a fellow traveler to approve:<br>
-                        <code>${esc(location.href)}</code>`;
-                    box.appendChild(note);
+                    const line2 = document.createElement("div");
+                    line2.className = "line2";
+                    line2.innerHTML = t("lockLine") + `
+                        <code class="room-url">${esc(location.href)}</code>`;
+                    box.appendChild(line2);
 
                     // 否決不需要保護——取消一筆請求沒有風險，任何 session 都可以做。
+                    const actions = document.createElement("div");
+                    actions.className = "actions";
                     const no = document.createElement("button");
-                    no.textContent = "Cancel this request";
+                    no.textContent = t("cancelRequest");
                     no.className = "btn btn-secondary";
                     no.onclick = () => rejectCheckout(p.id);
-                    box.appendChild(no);
+                    actions.appendChild(no);
+                    box.appendChild(actions);
                 } else {
-                    const note = document.createElement("div");
-                    note.className = "approval-note";
-                    note.textContent = "This request came from another device. You can approve it here.";
-                    box.appendChild(note);
+                    const line2 = document.createElement("div");
+                    line2.className = "line2";
+                    line2.textContent = t("fromAnotherDevice");
+                    box.appendChild(line2);
 
                     const actions = document.createElement("div");
-                    actions.className = "approval-actions";
+                    actions.className = "actions";
 
                     const ok = document.createElement("button");
-                    ok.textContent = "Approve payment";
+                    ok.textContent = t("approvePayment");
                     ok.className = "btn btn-primary";
                     ok.onclick = () => approveCheckout(p.id);
 
                     const no = document.createElement("button");
-                    no.textContent = "Decline";
+                    no.textContent = t("decline");
                     no.className = "btn btn-secondary";
                     no.onclick = () => rejectCheckout(p.id);
 
@@ -667,10 +1019,6 @@
         titleEl.value = "";
         };
 
-        document.getElementById("setBudget").onclick = () => {
-            setBudget(document.getElementById("budget").value, false);
-        };
-
         // 人按結帳一樣走 request_checkout，只是人可以接著自己按確認。
         // 保持同一條路徑，稽核紀錄才會一致。
         document.getElementById("checkout").onclick = () => requestCheckout(false);
@@ -683,18 +1031,33 @@
             } catch (e) {
                 // 剪貼簿權限被拒時不中斷流程，使用者仍可手動複製網址列
             }
-            copyInviteBtn.textContent = "Copied";
-            setTimeout(() => { copyInviteBtn.textContent = "Copy invite link"; }, 2000);
+            copyInviteBtn.textContent = t("copied");
+            setTimeout(() => { copyInviteBtn.textContent = t("copyInvite"); }, 2000);
+        };
+
+        // ═══ 語言切換 ═══
+        // 只動畫面：不重新註冊工具、不送訊息、不碰 sessionId。
+        // 語言存 localStorage（純顯示偏好）；sessionId 依然刻意不存，跨 session 付款保護不受影響。
+        document.getElementById("langToggle").onclick = () => {
+            lang = lang === "en" ? "zh" : "en";
+            try { localStorage.setItem("coplan-lang", lang); } catch (e) {}
+            applyLang();
         };
 
         // ═══ ⑤ 介面 B：Agent 的工具 ═══
         const mcpStatus = document.getElementById("mcp");
         let registered = false;
+        let mcpFound = null; // null = 還在偵測，之後才有 true/false
+
+        function renderMcpStatus() {
+            mcpStatus.textContent = t(mcpFound === null ? "mcpDetecting" : mcpFound ? "mcpReady" : "mcpUnavailable");
+            mcpStatus.className = "status-dot" + (mcpFound === null ? "" : mcpFound ? " ok" : " bad");
+        }
 
         setInterval(() => {
         const mc = document.modelContext || navigator.modelContext || window.modelContext;
-        mcpStatus.textContent = mc ? "✅ WebMCP ready" : "❌ WebMCP unavailable";
-        mcpStatus.className = "pill " + (mc ? "ok" : "bad");
+        mcpFound = !!mc;
+        renderMcpStatus();
         if (!mc || registered) return;
         registered = true;
 
@@ -800,6 +1163,10 @@
             }
         });
         }, 500);
+
+        // 最後才套語言：applyLang() 會用到上面所有 render 函式與 mcpFound，
+        // 放在檔案結尾才不會踩到 let 的暫時死區。
+        applyLang();
     </script>
   </body>
 </html>

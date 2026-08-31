@@ -589,3 +589,61 @@ if (msg.t === "reset_room") {
 **驗證（Playwright 實測，非只讀程式碼）**：`?seed=1` 開房塞入示範資料與稽核紀錄後，接著開 `?reset=1`——行程板變回空狀態文案、時間軸只剩一筆 `reset_room`（「Room reset — itinerary, timeline and pending approvals cleared」）、待確認結帳框消失、成員清單完整保留（含所有先前 join 過的名字）；網址列的 `reset` 參數已被移除；重新整理後時間軸依然只有那一筆，沒有被重複清空。Console 全程無錯誤（僅無關的 favicon 404）。六項驗收全過。
 
 ---
+
+---
+
+## 任務 8：版面重新設計（依 `docs/DESIGN-V2.md`） ✅
+
+**先完整讀 `docs/DESIGN-V2.md` 再動手。** 那份規格已經把顏色、尺寸、版面、每個元件、
+實作順序與退路全部訂死，不需要你做設計判斷。
+
+### 重點提醒
+
+- **第 1 節「不可破壞的東西」是硬性約束**，每一步做完都要對照驗證
+- **完全不要動 `src/index.js`**，也不要改任何 WebMCP 工具的定義
+- 依第 6 節的**八個步驟一步一驗**，不要一次全改。每步做完確認功能正常、Console 無錯誤
+- 第 4 步（比例定位的日程網格）是核心，也是風險最高的一步。
+  **若超過兩小時仍不穩定，依第 7 節退回列表版**，其餘步驟照常完成
+
+### 為什麼要做這個改版
+
+現在的版面只是把功能排整齊。改版後：
+- 旅伴移到最上方 → 一眼看出「這是多人的」
+- 行程改成按時間比例定位的網格 → **時間重疊的行程會真的在畫面上並排擠在一起**，
+  觀眾不必讀文字就懂衝突是什麼。這是 demo 影片裡最有說服力的一格畫面
+- 待確認付款改成全寬橫幅 → 無法忽視
+
+### 完成後需要使用者驗證的項目（你無法自行驗證）
+
+- 用開了 flag 的 Chrome 實測 WebMCP 工具仍正常註冊與呼叫
+- 用 ChatGPT 桌面版實測 Agent 呼叫工具、以及跨 session 付款保護
+
+### 回報
+
+**改了哪些檔案**：只有 `public/index.html`（完全重寫），`src/index.js` 全程未動——`git diff --stat` 確認過，第 1 節「不可破壞的東西」逐條都保留：6 個 WebMCP 工具的 `name`/`description`/`inputSchema` 一字未改、`esc()`/`addActivity`/`updateActivity`/`removeActivity`/`setBudget`/`requestCheckout`/`approveCheckout`/`colorOf`/`DEMO_ITEMS`/seed 與 reset 邏輯全部逐字複製、伺服器廣播後才重繪的模式沒破、結帳橫幅的鎖定文字（`🔒 For your protection...` 等）逐字保留。
+
+**第 4 步（比例定位網格）沒有採用第 7 節的退路**——完整實作了規格的日程網格，兩小時內就做完且穩定，不需要退回列表版。
+
+**我自己驗證過的項目**（本機 `wrangler dev` + Playwright 實測，非只讀程式碼）：
+- 空房間：Console 無錯誤、09:00–18:00 刻度、空狀態文案
+- 比例定位：1 小時行程 = 56px、4 小時行程 = 224px，時間差 5 小時對應 top 偏移 280px，精確吻合
+- 重疊並排：兩筆重疊行程等寬並排、都標 `conflict` 樣式與 ⚠️；加入第三筆遞移重疊的行程後正確重新分組成三等分（transitive grouping 有效）
+- 點選行程開啟右欄編輯卡、改時間後區塊高度即時跟著變、× 關閉卡片；用編輯卡刪除行程後正確移除並讓剩餘重疊項目重新分組
+- 預算 inline 編輯：Set budget → 輸入 → Enter 提交 → 再次點擊可編輯 → blur 提交，皆正確反映
+- 跨 session 付款保護：兩分頁測試，請求端只看得到「Cancel this request」，另一分頁（不同 session）正確顯示「This device already has a pending checkout」之外的另一則文字（可審核批准），批准後請求端行程正確變 `paid` 樣式（勾號 + 淡化）
+- 鍵盤無障礙：Tab 可 focus 到行程區塊（可見 outline），Enter 可開啟編輯卡
+- 375px 窄螢幕：無橫向捲動、Day 1/2/3 各自的時間刻度正確在窄螢幕下恢復顯示
+
+**驗證中發現並已修正的問題**：`.toolbar` 原本用固定 `height: 48px` 但同時有 `flex-wrap: wrap`——窄螢幕下 Travelers 的 chip 多、換行後內容變高，固定高度沒讓容器跟著撐開，換行的第二排會溢出蓋到下方的 `.agent-notice` 文字（規格外發現的真實 CSS bug，非規格本身的問題）。修法：`height: 48px` 改成 `min-height: 48px`，並把 `padding: 0 16px` 改成 `padding: 6px 16px` 讓換行後上下留白不會太擠。修完後重測 375px：toolbar 隨內容撐高到 190.8px，`.agent-notice` 緊接在下方、無重疊，截圖確認正常。這是本次唯一的程式碼修正，範圍限定在 `.toolbar` 這條 CSS 規則，沒有動到任何不可破壞清單裡的項目。
+
+**驗證後判斷是誤報、未修改的項目**：驗證時另外觀察到「新加入的分頁（Approver）一開始預算顯示『Set budget』，即使房間日誌已顯示有人設過 NT$3,000 預算」——確認過這不是 bug：預算是**個人**設定（存在 `members[msg.by].budget`，不是房間層級共用值），Approver 自己從未設過預算，顯示「Set budget」是正確行為，跟先前 Tester 設的 3000 無關。不需修改。
+
+**需要你自己用 Chrome/ChatGPT 確認的項目（我這邊無法驗證）**：
+- 開啟 WebMCP flag 的 Chrome 上，6 個工具是否仍正確註冊、`document.modelContext`/`navigator.modelContext` 是否能列出並呼叫（程式碼本身逐字未改，理論上行為不變，但需要你實機確認瀏覽器端真的認得到）
+- ChatGPT 桌面版透過 Agent 實際呼叫 `request_checkout` 等工具，確認畫面上的批准按鈕在請求端 session 真的「找不到」（不是工具層面擋，而是 DOM 上真的沒有這個按鈕可點）
+
+**規格未明講、我自己判斷的地方**（供之後對照）：
+- 桌機版每個 `.day-block` 各自帶一個 `.gutter`，只在第一欄顯示（`visibility:hidden` 隱藏其餘欄位的刻度但保留寬度），而非規格圖示字面上的單一共用時間軸——這樣三個日欄才能維持真正等寬；窄螢幕再用一條媒體查詢把 `visibility` 打開即可還原每欄各自的刻度，不用寫 resize 監聽
+- `computeTimeRange()` 在總時距 < 6 小時時，優先往後延伸 `endMin`（上限 23:00），延伸不夠才往前拉 `startMin`（下限 00:00）——規格沒指定延伸方向，選了「先延後、後提前」
+- 時間軸的 `.warn-row`（conflict/approve_blocked 提示色）不會蓋過姓名 span 既有的 inline `colorOf()` 顏色（CSS specificity，inline 必贏），判斷為可接受的次要視覺瑕疵，沒有用 `!important` 硬蓋
+
