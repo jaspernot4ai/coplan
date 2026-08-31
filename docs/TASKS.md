@@ -647,3 +647,83 @@ if (msg.t === "reset_room") {
 - `computeTimeRange()` 在總時距 < 6 小時時，優先往後延伸 `endMin`（上限 23:00），延伸不夠才往前拉 `startMin`（下限 00:00）——規格沒指定延伸方向，選了「先延後、後提前」
 - 時間軸的 `.warn-row`（conflict/approve_blocked 提示色）不會蓋過姓名 span 既有的 inline `colorOf()` 顏色（CSS specificity，inline 必贏），判斷為可接受的次要視覺瑕疵，沒有用 `!important` 硬蓋
 
+---
+
+## 任務 9：介面中英切換 ✅
+
+規劃端在任務 8 之後直接動手加了一份中英切換（未走正常流程）。第 0 步先確認過：
+`public/index.html` 從任務 8 起就沒 commit 過，任務 8 的重寫跟這份語言切換疊在同一份未版控的工作目錄裡，
+無法乾淨切分退掉語言切換、只留任務 8。第一輪稽核用「跟規格逐條核對」的方式檢查這份既有實作，
+但你指出這是循環論證（規格是照著這份既有 code 寫的，符合規格不構成獨立驗證），第 2/4/5/6 節的靜態核對
+不算數，第 7 節要重新設計測法、實際跑過。以下是照這個要求重做的結果。
+
+### 第 0 步：先 commit
+
+`git status` 確認過 `public/index.html` 沒被 `.gitignore` 排除（`.gitignore` 只排 `node_modules/` 與 `.wrangler/`，
+純粹是沒人 commit 過，不是被忽略）。已將任務 8 重寫 + 語言切換 + `docs/DESIGN-V2.md`（原本也未追蹤）
+一起 commit（`083e206`），訊息裡誠實寫明這是兩件事疊在一起、任務 9 尚未驗收。
+`public/index.html.pre-task9-backup` 沒有進版控，commit 完已刪除。`src/index.js` 全程未變動（`git diff --stat` 為空）。
+
+### 第 7 節：我自己重新設計並實測的項目（本機 wrangler dev + Playwright，非讀程式碼推論）
+
+測試前先清掉六個互相打架的殘留 `wrangler dev`／`workerd.exe` 進程（多次任務下來沒清乾淨，
+導致一開始連線一直 hang）。以下每項都是這次獨立設計、實際跑出來的結果，不是沿用規劃端的測試結構：
+
+- **英文模式逐字核對**：沒有拿規劃端的 `I18N.en` 當基準，改用 `git log -S "For your protection"` 與
+  `git log -S "ask a fellow traveler to approve"` 去翻任務 8 之前就已 commit 的歷史版本，
+  確認結帳鎖定文字（含 `<b>` 標籤位置與句尾冒號）逐字元組相同，不是規劃端改過的。
+  另外實測讀取 `#status`／`#mcp`／`#copyInvite`／`.travelers-label`／`#checkout`／`.agent-notice`／
+  `#add`／`.section-title` 的即時 DOM 文字，全數與英文預設值相符。
+- **`#type` select.value 在中文模式下仍為英文 enum**：實測切到中文後讀 `#type option` 的
+  `value` 屬性，四個選項的 `value` 分別仍是 `Sight`/`Food`/`Transit`/`Stay`，只有顯示文字變中文。
+- **雙分頁跨語言即時同步（真實 WebSocket，不是假的）**：開兩個真的分頁連進同一個房間——
+  Alice 用中文、Bob 用英文（各自手動切換，不依賴 localStorage，因為兩分頁同源共用 localStorage，
+  這點在下方「規格未明講之處」有記錄）。從 Bob（英文）新增一筆 `type: "Food"` 的行程，
+  在 Alice（中文）分頁**即時**收到廣播、行程塊正確渲染、日誌正確顯示「已新增「...」到第 1 天 12:00–13:00」，
+  且讀取 `items` 陣列確認伺服器實際存的 `type` 值是英文 `"Food"`，不受 Alice 端語言影響。
+- **跨 session 付款保護（querySelector 確認 DOM，不是看畫面），兩種語言都測**：Bob 建立一筆
+  NT$2,500 的待付項目並發起結帳。在 Bob（請求端）的分頁用 `querySelector` 抓
+  `.approval-banner` 裡所有 `<button>`，英文模式下只有一顆「Cancel this request」，DOM 裡
+  完全沒有 approve 按鈕；接著在同一分頁切成中文、重新查詢，仍然只有「取消這筆請求」一顆，
+  確認語言切換的重繪不會意外生出確認按鈕。另一分頁 Alice（不同 session）中文模式下正確顯示
+  「確認付款」／「拒絕」兩顆按鈕；點下「確認付款」後，Bob 分頁即時收到廣播、該行程變
+  `paid: true`、待確認橫幅消失、日誌正確顯示「已確認付款 NT$2,500（demo 模式，未接真實金流）」。
+- **語言切換不多送 WebSocket 訊息**：重新整理分頁後，用 `WebSocket.prototype.send` 包一層計數器
+  （在初始 `join` 訊息送出之後才掛上，避免把它算進去），連續切換語言 2 次，計數器全程維持 0。
+- **Fallback（塞一筆表上沒有的訊息，不是讀程式碼推論）**：因為 `src/index.js` 現有 13 個
+  `addLog()` 呼叫點跟前端的 13 條規則剛好一一對應，沒辦法在不動 `src/index.js` 的前提下讓伺服器
+  真的產生第 14 種訊息。改用等效的作法：直接對真實的 `log` 陣列 `push` 一筆規則表上沒有的假訊息
+  （模擬「伺服器廣播了新訊息類型」這個情境本身），呼叫的是**跟每次真實 WS 訊息進來時完全同一個**
+  `renderLog()`，不是直接呼叫 `localizeSummary()`。結果：中文模式下這筆訊息原樣顯示英文，
+  沒有壞掉、沒有顯示 `undefined`。
+- **375 / 768 / 1280 三種寬度 × 兩種語言**：六個組合全部用 `getBoundingClientRect` 實測
+  `scrollWidth` vs 視窗寬、`.topbar`/`.toolbar`/`.agent-notice` 是否互相重疊——全數無橫向捲動、無重疊。
+  桌機（768px、1280px）兩種語言下 `.topbar` 高度都精確是 52px。
+- **重整後語言偏好保留**：中文分頁重整後（利用 localStorage 已存的 `coplan-lang`），
+  `#langToggle` 按鈕文字正確顯示「EN」（代表目前是中文），`document.documentElement.lang`
+  正確是 `zh-Hant`。
+- **Console 全程無錯誤**：兩個分頁從頭到尾只有無關的 favicon 404，沒有其他錯誤或警告。
+
+### 本輪沒有抓到需要修的問題
+
+第 7 節每一條都是這次重新設計、實際跑出結果，**沒有沿用規劃端的測試結構**。結果是零缺陷——
+這不是因為信任既有實作，而是這輪的三個重點懷疑對象（雙分頁真實同步、fallback 真的觸發、
+兩種語言下的付款保護 DOM 檢查）都各自實測通過。沒有任何程式碼修改。
+
+### 需要你自己用 Chrome/ChatGPT 確認的項目（我這邊無法驗證）
+
+- 開了 WebMCP flag 的 Chrome：6 個工具是否仍正確註冊與呼叫（語言切換沒有動 `registerTool` 那段，
+  也沒有在切換語言時重新呼叫 `registerTool`，程式碼上看不到重新註冊的路徑，但這條規則本身
+  要求不能用 Playwright 測，所以仍待你實機確認）
+- ChatGPT 桌面版：Agent 呼叫工具、以及跨 session 付款保護的真實體驗
+
+### 規格未明講、我自己判斷的地方
+
+- 語言偏好存在 `localStorage`，同一瀏覽器開多個分頁會共用同一把 key（`coplan-lang`）。
+  規格第 6 節說「同一個房間裡不同成員可以各自用不同語言檢視」，這句話在**不同裝置／不同瀏覽器**
+  之間自然成立（各自獨立的 localStorage）；但同一台電腦、同一個瀏覽器開兩個分頁時，
+  两個分頁載入當下都會讀到同一個已存偏好，之後才能各自手動切換成不同語言——這次測試就是
+  用「各自手動切換」模擬這個情境，測試結果不代表兩分頁會自動維持不同語言。這跟 `sessionId`
+  刻意不共用是兩件不同的事，語言偏好本來就沒有要求跨分頁隔離，只是要求「不進房間狀態」，
+  這點有守住。
+
