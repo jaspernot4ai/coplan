@@ -271,6 +271,23 @@ export class RoomDO {
       }
     }
 
+    // 錄影與評審試玩用的重置。一次清空，避免逐筆刪除在時間軸留下數十筆雜訊。
+    // members 保留，這樣重置後成員顏色與名單不變，錄影可以直接接著開始。
+    if (msg.t === "reset_room") {
+      this.items = [];
+      this.log = [];
+      this.pendingApprovals = [];
+      this.addLog({
+        who: msg.by,
+        viaAgent: false,
+        action: "reset_room",
+        summary: "Room reset — itinerary, timeline and pending approvals cleared",
+      });
+      await this.save();
+      this.broadcast();
+      return;
+    }
+
     // 人也可以直接否決 Agent 的請求
     if (msg.t === "reject_checkout") {
       const idx = this.pendingApprovals.findIndex(p => p.id === msg.id);

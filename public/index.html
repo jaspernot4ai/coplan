@@ -414,21 +414,16 @@
           }
         }
 
-        // 清空行程與待確認請求。用既有的 remove / reject_checkout 訊息逐筆清，不新增後端操作。
-        // 日誌沒有清除機制——現有訊息類型只能新增/移除單筆項目，沒有「清空日誌」這個操作，
-        // 這超出本任務「不動 src/index.js」的範圍，故意不做，見回報。
+        // 清空行程、時間軸與待確認請求，一次送一則 reset_room 訊息。
+        // 改用單一訊息而非逐筆 remove/reject——逐筆清會在時間軸留下數十筆雜訊，
+        // 錄 demo 影片時開場畫面不乾淨；日誌本身也沒有逐筆清除的機制。
         function maybeReset(currentItems, currentApprovals) {
           if (resetAttempted) return;
           const params = new URLSearchParams(location.search);
           if (params.get("reset") !== "1") return;
           resetAttempted = true;
 
-          for (const a of currentItems) {
-            ws.send(JSON.stringify({ t: "remove", id: a.id, by: me(), viaAgent: false }));
-          }
-          for (const p of currentApprovals) {
-            ws.send(JSON.stringify({ t: "reject_checkout", id: p.id, by: me() }));
-          }
+          ws.send(JSON.stringify({ t: "reset_room", by: me() }));
 
           // 移除網址上的 reset 參數，避免重整又清一次。
           params.delete("reset");
@@ -604,6 +599,8 @@
                 const box = document.createElement("div");
                 box.className = "approval-box" + (p.overBudget ? " over-budget" : "");
 
+                // who 內含已組好的 HTML：requestedBy 在這裡就要 esc()，
+                // 之後插進 innerHTML 時不會、也不能再轉義一次。
                 const who = p.viaAgent === false ? `<b style="color:${colorOf(p.requestedBy)}">${esc(p.requestedBy)}</b>`
                     : `🤖 <b style="color:${colorOf(p.requestedBy)}">${esc(p.requestedBy)}'s Agent</b>`;
 

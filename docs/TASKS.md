@@ -271,7 +271,7 @@ Agent 想點也沒有東西可點。
 
 ---
 
-## 任務 3.5：修 SEC-001 儲存型 XSS（**最優先，先於英文化**）
+## 任務 3.5：修 SEC-001 儲存型 XSS（**最優先，先於英文化**）✅
 
 完整分析見 `docs/REVIEW-2026-08-28.md`。摘要：
 
@@ -287,10 +287,24 @@ Agent 想點也沒有東西可點。
 
 ### 回報
 
+**改了哪些檔案**：`public/index.html`（加 `esc()`、套用到全部 5 處 `innerHTML` 動態值、`?as=` 限長）；刪除 `public/index.html.bak`、`src/index.js.bak`（用 `~/.claude/scripts/trash.ps1` 移到回收桶，不是永久刪除）。沒有動 `src/index.js`——SEC-001 是純前端渲染問題。
+
+**esc() 套用位置**：逐一核對審查報告列的三處＋「其他任何 innerHTML」，實際找到 5 處動態值，全部套用：
+1. 行程卡片 `row2.innerHTML`：`a.type`、`a.createdBy`
+2. 時間軸 `div.innerHTML`：`e.who`（兩個分支都要）、`e.action`、`e.summary`
+3. 成員清單 `renderMembers`：`m.name`
+4. 待確認結帳框 `renderApprovals`：`p.requestedBy`（兩個分支）
+5. 待確認結帳框發起端提示：`location.href`（review 有特別點名這一處，容易漏，因為看起來像是「我方產生的網址」而非使用者輸入，但網址的 query string 本身就帶著使用者可控的 `?as=` 值）
+
+`colorOf()` 回傳值（PALETTE 固定色碼）與 `titleSpan.textContent = a.title`（已用 textContent）依審查報告的判準不需轉義，維持原樣。
+
+**MAINT-002 的一行修正**：`myName` 改成 `(...get("as") || "").slice(0, 20).trim() || "Anonymous Traveler"`，超長或空白都會落回預設值。
+
+**驗證**：Playwright 用 `?as=<img src=x onerror=alert(document.title)>` 開房並新增一筆行程——沒有跳出任何 alert，成員清單、行程卡片、時間軸三處都把該字串當純文字顯示，沒有被當成 HTML 執行。Console 全程無錯誤。這條是本次修正的核心驗收項目，已用瀏覽器實際攻擊字串驗證過，不是只讀程式碼判斷。
 
 ---
 
-## 任務 3.6：WebMCP 安全加固（與任務 3.5 一起做）
+## 任務 3.6：WebMCP 安全加固（與任務 3.5 一起做）✅
 
 完整分析見 `docs/REVIEW-WEBMCP-SECURITY.md`。這裡只列要動手的部分。
 
@@ -364,10 +378,32 @@ function pickActivityFields(obj) {
 
 ### 回報
 
+**改了哪些檔案**：只有 `src/index.js`（A、B）與 `public/index.html`（C、D 各一行/一句）。
+
+**A. 欄位白名單**：完全照給的程式碼做，`ALLOWED_ACTIVITY_FIELDS` 沒有 `id`/`createdBy`/`viaAgent`/`paid`/`conflictWith`，這五個一律由伺服器決定，`add` 用 `msg.activity.createdBy` + `!!msg.activity.viaAgent` + `pickActivityFields`，`update` 用 `Object.assign(a, pickActivityFields(msg.patch))`。
+
+**B. 速率與容量上限**，三條都做：
+1. `items` 上限 200，超過時不 push，改寫一筆 `action: "limit_reached"` 的稽核紀錄（沿用同一個 `if/else` 結構，不影響後面的 `detectConflicts`/`save`/`broadcast`）
+2. `pendingApprovals` 上限 5 筆，且同一 `sessionId` 已有待確認請求時直接拒絕、寫 `action: "checkout_limited"` 的紀錄——這條同時也是任務規格外多做的「防重複結帳」，驗收 2（連續呼叫兩次只留一筆）就是靠這個機制通過的
+3. `webSocketMessage` 一進來就先過速率窗（`Map<ws, {count, windowStart}>`，每秒重置），超過 20 則直接 `return`，不解析訊息、不回應
+
+**多做的一件小事（不在規格清單但同一個機制自然需要）**：加了 `webSocketClose` / `webSocketError` 清掉對應連線的 `rateLimits` 項目，避免這個 Map 隨著連線數（尤其是短連線反覆進出）無界成長——這跟 SEC-006 本身在防的「無上限資源成長」是同一件事，所以一起做了，沒有另外問。
+
+**C. 資料外流告知**：在左欄「Travelers」區塊、成員清單下方加了一行 `.agent-notice`（13px、`--muted`），文字照規格原文。
+
+**D. 破壞性工具警語**：`remove_activity` 與 `update_activity` 的 description 各補一句，`remove_activity` 用規格給的原文（會影響所有成員、刪除前確認），`update_activity` 仿照寫法補「可能改到別人建立的項目，動手前先跟使用者確認」。
+
+**驗證（Playwright 實際攻擊，非只讀程式碼）**：
+1. `patch:{paid:true}` 直接送 → 該筆項目沒有變成已付款，價格欄位仍可編輯，`paid` 欄位沒有被寫入。同一時間送 `patch:{price:500}` 驗證白名單內的欄位仍正常生效，排除「整個 update 被擋掉」的誤判。
+2. 連續呼叫 `requestCheckout(false)` 兩次 → `#approvals` 只多一個框，時間軸出現 `checkout_limited` 紀錄說明第二次被擋下的原因。
+3. 迴圈送 50 則 `add`（用 50 而非 100，效果相同但省驗證時間）→ 伺服器只接受 20 則（速率窗生效），頁面全程可操作、無 JS 錯誤。**有一個值得注意但不算失敗的現象**：洪水攻擊後所有分頁的 WebSocket 一度斷線（`readyState 3`），懷疑是 Durable Object 在瞬間流量下重啟或被驅逐，而不是單純限流生效；重新整理後**立即重連、資料完全沒有遺失**（含已接受的 20 筆全部都在）。這代表限流本身有效，但如果要在正式 demo 上避免這個瞬斷的觀感，可能需要另外處理 DO 的負載行為——這超出「最小版三條」的範圍，記在這裡讓你判斷要不要另開任務。
+4. 既有功能（新增/改時間/刪除、跨 session 確認、英文化）用 Playwright 走過一輪，行為與修正前一致，Console 無錯誤。
+
+**沒有做的（照「不要做的」清單，確認過不是遺漏）**：沒有加 `createdBy` 權限檢查、沒有加 nonce/序號防重放、沒有引入任何外部服務。
 
 ---
 
-## 任務 4：介面英文化（最高優先）
+## 任務 4：介面英文化（最高優先）✅
 
 ### 為什麼
 
@@ -412,10 +448,22 @@ function pickActivityFields(obj) {
 
 ### 回報
 
+**改了哪些檔案**：`public/index.html`（所有 UI 字串、WebMCP 工具 description、`<title>`、`lang="en"`）與 `src/index.js`（8 個 `addLog` 的 summary）。
+
+**做完的範圍**：標題列、狀態文字、表單標籤與下拉選項（`Sight/Food/Transit/Stay`，連同 `add_activity` 的 `inputSchema.enum` 一起改，確保 UI 選項與工具接受的值一致，這點規格沒明講但邏輯上一定要一致，否則 Agent 傳中文列舉值會跟畫面選項對不上）、空狀態文案、衝突／超支／已付款標記、待確認結帳區全部文字（三句指定翻譯照給的原文用）、6 個 WebMCP 工具的 description 與 `execute` 回傳訊息、`src/index.js` 的 8 個稽核 summary、`<title>`、`<html lang>` 改成 `en`。連 `?as=` 沒帶值時的預設顯示名稱「匿名旅伴」也一併改成 `Anonymous Traveler`（規格沒列這條，但它是使用者看得到的字串，不改會漏網）。
+
+**規格沒寫到、自行決定的地方**：
+1. 時間軸的 `toLocaleTimeString` locale 從 `"zh-TW"` 改成 `"en-US"`（`hour12:false` 已強制 24 小時制，locale 主要影響次要格式細節，跟著介面語言一致比較合理）。
+2. 幾處數量文字加了單複數判斷（`1 item` vs `2 items`），規格的英文範例沒特別要求，但中文本來就沒有單複數問題，直接翻成英文若不處理會出現「1 items」這種不自然的說法，判斷這是翻譯品質的一部分，不是額外功能。
+3. 程式碼註解維持中文，符合驗收「程式碼註解可以維持中文」。
+
+**驗證**：先用 `grep` 對兩個檔案抓所有中日韓文字區間字元，確認命中的只剩 `//` 與 `/* */` 註解，沒有任何字串字面值遺漏。接著兩輪 Playwright 驗證（第一輪在英文化完成後、第二輪在任務 3.5/3.6 安全修正之後重跑一次確認沒有回歸）：全頁畫面截圖逐字掃描無中文；新增/設預算/結帳/確認/否決、衝突警示、375px 版面都用真的瀏覽器操作過，行為與改版前一致；Console 全程無錯誤。第一輪驗證另外抓到一個小 bug（伺服器端結帳稽核紀錄的「(N items)」沒有做單複數，跟畫面上的「(1 item)」不一致）已經修掉。
+
+**沒有測、需要你確認的**：WebMCP 工具的英文 description 對 Agent 理解程度的實際影響（例如 ChatGPT 讀了新版 description 是否還是會正確呼叫工具、有沒有因為翻譯造成語意流失）——這需要有 flag 的 Chrome 或 ChatGPT 桌面版實際跟 Agent 對話測試，我這邊只能確認字串本身翻得對、工具還能正常註冊與被靜態呼叫。
 
 ---
 
-## 任務 5：示範資料與重置
+## 任務 5：示範資料與重置 ✅
 
 錄影與評審試玩都需要「一打開就有東西看」。
 
@@ -437,10 +485,22 @@ function pickActivityFields(obj) {
 
 ### 回報
 
+**改了哪些檔案**：只有 `public/index.html`（一個 `DEMO_ITEMS` 常數 + `maybeSeedDemo` / `maybeReset` 兩個函式，掛在 `ws.onmessage` 收到第一份 state 時觸發）。沒有動 `src/index.js`，也沒有新增任何後端訊息類型——`seed` 用既有的 `add` 訊息逐筆送、`reset` 用既有的 `remove` / `reject_checkout` 訊息逐筆清，理由是這樣完全不用碰後端就能做到規格要求的效果。
+
+**示範資料內容**：東京 3 天、8 筆項目，分屬 Cindy（4 筆）與 Bob（4 筆）；Day 1 的兩筆（09:00–11:00 淺草寺 / 10:00–12:00 上野公園）與 Day 2 的兩筆（15:00–16:00 箱根旅館入住 / 15:30–17:00 蘆之湖遊船）分別重疊，共兩組衝突（規格只要求至少一組「兩筆衝突」，這裡做了兩組讓 Day 1、Day 2 都看得到琥珀色標記）；四筆已標價（¥1,200／¥3,400／¥8,000／¥3,800），均超過規格要求的「至少三筆」。
+
+**規格沒寫到、自行決定的地方**：
+1. `seed`/`reset` 的資料是直接建 `add`/`remove`/`reject_checkout` 訊息送出，**沒有經過 `addActivity()` 這個動作層包裝函式**——因為 `addActivity()` 會強制把 `createdBy` 寫成目前這個 session 的名字（`me()`），但示範資料需要同時有 Cindy 跟 Bob 兩個作者，跟目前開房間的人是誰無關。這是刻意繞過既有的動作層入口，理由已寫在程式碼註解裡。
+2. **`reset=1` 沒有清空日誌（Agent 活動時間軸）**——規格寫「清空該房間的行程、日誌與待確認請求」，但現有的 WebSocket 訊息類型裡沒有任何一個能清空 `log` 陣列（`add`/`update`/`remove` 只操作單筆項目，沒有「清空日誌」這個操作），要做到就必須在 `src/index.js` 新增一種訊息類型或給既有訊息加特殊分支，這超出本任務「不要進 `src/index.js`」的範圍。故意沒做，已在程式碼裡寫註解說明，讓你判斷是否要另開一個小任務加後端支援，還是接受 demo 錄影前重新整理房間、log 本來就有 100 筆上限不會無限成長。
+3. `reset=1` 清空後只移除網址上的 `reset` 參數，保留其他參數（例如 `as=`），用 `URLSearchParams.delete` 而非整個清空 query string，這樣使用者的身分不會因為按了 reset 而跟著被清掉。
+
+**跟舊的「任務 3」重複**：`docs/TASKS.md` 裡還留著較早、較簡略的「任務 3：示範資料與一鍵重置」，內容被這份任務 5 完整取代（規格更細、驗收更明確），我視為任務 3 已由任務 5 取代、不再單獨執行，沒有另外處理任務 3 的回報區塊，留給你確認要不要把任務 3 整段刪掉以免以後混淆。
+
+**驗證**：Playwright 測過 `?seed=1` 在空房間會塞入全部 8 筆示範行程、衝突標記與價格正確顯示；在已有資料（23 筆殘留測試資料）的房間開 `?seed=1` 時正確跳過、沒有覆蓋既有資料——這正好驗證了「不覆蓋」這條規則。`?reset=1` 的清空與網址參數移除邏輯有讀過程式碼確認，實際清空效果因為測試環境房間一直被其他並行的驗證流程持續寫入資料，沒有取得一個乾淨的「清空後重整、確認不再清空」的獨立截圖，建議你自己在乾淨房間跑一次 `?seed=1` → `?reset=1` → 重新整理，肉眼確認清空且沒有再次清空。
 
 ---
 
-## 任務 6：README 與授權（提交必要條件）
+## 任務 6：README 與授權（提交必要條件） ✅
 
 Devpost 規則要求**公開的程式碼儲存庫並附開源授權**，沒有會不予評分。
 
@@ -461,3 +521,71 @@ Devpost 規則要求**公開的程式碼儲存庫並附開源授權**，沒有�
 
 ### 回報
 
+**新增檔案**：根目錄 `README.md`、`LICENSE`。另外把 `package.json` 的 `"license"` 欄位從 `"ISC"`（舊的預設值，從沒對過）改成 `"MIT"`，跟新加的 LICENSE 檔案一致——這條不在任務清單裡，但既然要加開源授權，`package.json` 自稱的授權跟實際的 LICENSE 檔不一致會很奇怪，屬於同一件事的一部分，就一起改了。
+
+**README 內容**：清單要求的項目全部有——一句話說明、live demo 網址、三個亮點、6 個 WebMCP 工具的表格、「人和 Agent 走同一條程式路徑」的架構說明＋純文字流程圖、兩個實測發現（`document`/`navigator.modelContext` 平台差異、「不渲染按鈕」而非 disabled 的理由）、Local development 步驟、Tech stack、License 段落。
+
+**多加的一段（規格沒要求，但判斷值得加）**：「Known trade-offs」小節，寫了三件事——沒有身分驗證（連結分享模式）、價格是自填不是真實金流、伺服器有白名單/容量/速率限制。這些內容其實是 `docs/REVIEW-WEBMCP-SECURITY.md` 裡明確建議「要主動寫進提交說明」的項目（SEC-003 身分驗證、price 未來要接真實金流才能改由伺服器決定、SEC-006 的配額限制）。README 就是這次唯一會被評審看到的「提交說明」，所以我判斷這些內容屬於任務 6 的範圍內，不是擴大範圍，一起放進去了。
+
+**LICENSE 的版權人名稱**：MIT 條款需要一個 `Copyright (c) 2026 <名字>`，任務清單沒指定要填誰，我先填了專案名稱「CoPlan」（沒有正式法人或指定個人時的常見慣例）。如果你想改成你自己的名字或 GitHub 帳號，直接改 `LICENSE` 第 3 行即可。
+
+**驗證**：README 裡列的檔案結構、指令、路由都對照現有的 `wrangler.jsonc`、`package.json`、`src/index.js`、`public/index.html` 逐項核對過，沒有憑空編造路徑或指令；6 個工具的 description 摘要跟 `public/index.html` 目前英文化後的版本一致。這份文件本身不涉及程式邏輯，沒有可以用瀏覽器驗證的行為，用「內容跟程式碼一致」取代功能測試。
+
+---
+
+---
+
+## 任務 7：讓 `?reset=1` 真正乾淨（錄影前必做，改動很小） ✅
+
+見 `docs/REVIEW-2026-08-28b.md` 的 REV2-002。
+
+目前 `?reset=1` 用逐筆 `remove` 訊息清空，會在時間軸留下一整排 `remove_activity` 紀錄，
+日誌也清不掉。錄 demo 影片時開場畫面不乾淨。
+
+**做法**：
+
+1. `src/index.js` 加一個分支：
+
+```js
+// 錄影與評審試玩用的重置。一次清空，避免逐筆刪除在時間軸留下數十筆雜訊。
+// members 保留，這樣重置後成員顏色與名單不變，錄影可以直接接著開始。
+if (msg.t === "reset_room") {
+  this.items = [];
+  this.log = [];
+  this.pendingApprovals = [];
+  this.addLog({
+    who: msg.by,
+    viaAgent: false,
+    action: "reset_room",
+    summary: "Room reset — itinerary, timeline and pending approvals cleared",
+  });
+  await this.save();
+  this.broadcast();
+  return;
+}
+```
+
+2. 前端 `maybeReset` 改成只送這一則訊息，移除原本的逐筆 remove 迴圈。
+   移除網址參數那段保留。
+
+**同時處理 REV2-001**：在 `renderApprovals` 的 `who` 變數上方加註解：
+
+```js
+// who 內含已組好的 HTML：requestedBy 在這裡就要 esc()，
+// 之後插進 innerHTML 時不會、也不能再轉義一次。
+```
+
+**驗收**：`?reset=1` 後行程、時間軸、待確認請求全空，時間軸只留一筆 reset 紀錄，
+成員清單保留，重整不會再次清空。
+
+### 回報
+
+**改了哪些檔案**：`src/index.js`（新增 `reset_room` 分支，完全照給的程式碼，一字不改）、`public/index.html`（`maybeReset` 改成送單一 `reset_room` 訊息、`renderApprovals` 加 REV2-001 的說明註解）。
+
+**`reset_room` 分支放置位置**：放在 `reject_checkout` 分支之前，跟 `join` 分支一樣用 `return` 提早結束——因為它自己已經呼叫了 `save()`/`broadcast()`，不需要再跑到函式尾端共用的那段。
+
+**`maybeReset` 的一個小備註**：函式簽章還留著 `currentItems`、`currentApprovals` 兩個參數，但函式內容改掉後這兩個參數已經沒用到了。因為任務描述是「改動很小」且沒有要求動函式簽章或呼叫端，我沒有連帶清掉這兩個沒用到的參數，維持最小改動；如果你要一併清乾淨，`ws.onmessage` 裡的呼叫處也要跟著改。
+
+**驗證（Playwright 實測，非只讀程式碼）**：`?seed=1` 開房塞入示範資料與稽核紀錄後，接著開 `?reset=1`——行程板變回空狀態文案、時間軸只剩一筆 `reset_room`（「Room reset — itinerary, timeline and pending approvals cleared」）、待確認結帳框消失、成員清單完整保留（含所有先前 join 過的名字）；網址列的 `reset` 參數已被移除；重新整理後時間軸依然只有那一筆，沒有被重複清空。Console 全程無錯誤（僅無關的 favicon 404）。六項驗收全過。
+
+---
