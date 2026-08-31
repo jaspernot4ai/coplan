@@ -1,283 +1,808 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>WebMCP 通路測試</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="origin-trial" content="A6ym2QSYF6VFXiv/8V/gI3XeJgLwnSApX3Lx81THcSzcqbjYKA/Wgifu6lCGDinGX0RqffTBf3w4iRjOjcB+dgcAAACEeyJvcmlnaW4iOiJodHRwczovL2NvcGxhbi5jb3BsYW4tbGFiLndvcmtlcnMuZGV2OjQ0MyIsImZlYXR1cmUiOiJXZWJNQ1AiLCJleHBpcnkiOjE3OTQ4NzM2MDAsImlzU3ViZG9tYWluIjp0cnVlLCJpc1RoaXJkUGFydHkiOnRydWV9" />
+    <title>CoPlan — Multiplayer itinerary planning with your own AI agent</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --ink: #14181f;
+        --muted: #6b7280;
+        --line: #e5e7eb;
+        --accent: #2563eb;
+        --warn: #b45309;
+        --warn-bg: #fef3c7;
+        --danger: #dc2626;
+        --danger-bg: #fef2f2;
+        --ok: #16a34a;
+        --radius: 10px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1216;
+          --panel: #171b21;
+          --ink: #e8eaed;
+          --muted: #9aa3ae;
+          --line: #262c34;
+          --warn-bg: #3a2c0a;
+          --danger-bg: #3a1414;
+        }
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body { height: 100%; margin: 0; }
+
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font-family: system-ui, -apple-system, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+        font-size: 15px;
+        line-height: 1.5;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+
+      h1, h2, h3, p, fieldset, legend { margin: 0; padding: 0; border: none; }
+
+      /* ── 標題列 ── */
+      .topbar {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      .topbar-left { display: flex; align-items: baseline; gap: 8px; }
+      .brand { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+      .room-id { color: var(--muted); font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 13px; }
+
+      /* ── 三欄版面 ── */
+      .layout {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 260px 1fr 340px;
+        gap: 12px;
+        padding: 12px;
+      }
+      .col { min-height: 0; overflow-y: auto; }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 16px;
+      }
+
+      .section-title {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        font-weight: 600;
+        margin: 0 0 8px;
+      }
+
+      /* ── 按鈕與表單元素 ── */
+      .btn {
+        padding: 8px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        font: inherit;
+        transition: filter 0.1s;
+      }
+      .btn:hover { filter: brightness(0.97); }
+      .btn-primary { background: var(--accent); color: #fff; border: none; }
+      .btn-secondary { background: var(--bg); color: var(--ink); border: 1px solid var(--line); }
+
+      select, input {
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--ink);
+        font: inherit;
+      }
+
+      .tabular-nums { font-variant-numeric: tabular-nums; }
+
+      /* ── 左欄 ── */
+      .status-group { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+      .pill { display: inline-block; font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid currentColor; }
+      .pill.ok { color: var(--ok); }
+      .pill.bad { color: var(--danger); }
+
+      .side-section { margin-bottom: 20px; }
+      .side-section:last-child { margin-bottom: 0; }
+
+      .members-list { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+      .member-tag { font-weight: 700; }
+
+      .agent-notice { font-size: 12px; line-height: 1.4; color: var(--muted); margin: 8px 0 0; }
+
+      .budget-form { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+      .budget-form label { font-size: 13px; color: var(--muted); }
+      .budget-form input { width: 100px; }
+      .budget-status { font-size: 13px; margin-bottom: 12px; }
+
+      /* ── 中欄：新增表單 ── */
+      .add-form { margin-bottom: 12px; }
+      .add-form-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+      #title { flex: 1 1 160px; }
+
+      /* ── 中欄：待確認結帳請求 ── */
+      .approval-box {
+        border: 2px solid var(--accent);
+        background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+        border-radius: var(--radius);
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+      .approval-box.over-budget {
+        border-color: var(--danger);
+        background: var(--danger-bg);
+      }
+      .approval-box .approval-text { font-size: 15px; }
+      .approval-box .approval-note { color: var(--muted); font-size: 13px; }
+      .approval-box .approval-actions { margin-top: 8px; display: flex; gap: 8px; }
+      .approval-box .waiting { color: var(--muted); font-size: 13px; }
+
+      /* ── 中欄：行程表 ── */
+      .board { display: flex; flex-direction: column; gap: 16px; }
+      .day-section h3 { margin-bottom: 8px; }
+      .empty-day {
+        border: 1px dashed var(--line);
+        border-radius: var(--radius);
+        color: var(--muted);
+        font-size: 13px;
+        text-align: center;
+        padding: 16px;
+      }
+      .empty-board { color: var(--muted); text-align: center; padding: 40px 16px; }
+
+      .card {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        border-radius: var(--radius);
+        padding: 10px 12px;
+        margin-bottom: 8px;
+      }
+      .card.conflict { border-color: var(--warn); background: var(--warn-bg); }
+      .card-row1 { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+      .card-row1 input[type="time"] { width: 92px; padding: 4px 6px; font-size: 13px; }
+      .card-title { font-size: 15px; font-weight: 700; flex: 1 1 auto; }
+      .card-row2 { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+      .card-row2 .proposer { font-weight: 700; }
+      .card-row2 .price-input { width: 80px; padding: 4px 6px; font-size: 13px; margin-left: auto; }
+      .card-paid { color: var(--ok); font-size: 13px; white-space: nowrap; }
+      .card-del { background: none; border: none; cursor: pointer; font-size: 16px; color: var(--muted); padding: 0 0 0 4px; }
+      .card-del:hover { color: var(--danger); }
+      .card-warn { color: var(--warn); font-size: 13px; margin-top: 4px; }
+
+      /* ── 右欄：活動時間軸 ── */
+      .log-entry { border-bottom: 1px solid var(--line); padding: 6px 0; font-size: 13px; }
+      .log-entry:last-child { border-bottom: none; }
+      .log-time { color: var(--muted); }
+      .log-action { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; background: var(--bg); padding: 1px 4px; border-radius: 4px; }
+      .log-summary { display: block; color: var(--muted); }
+      .empty-timeline { color: var(--muted); font-size: 13px; text-align: center; padding: 20px; }
+
+      /* ── 窄螢幕：單欄堆疊 ── */
+      @media (max-width: 1100px) {
+        body { height: auto; }
+        .layout { display: flex; flex-direction: column; height: auto; }
+        .col { overflow-y: visible; }
+        .col-center { order: 1; }
+        .col-left { order: 2; }
+        .col-right { order: 3; }
+      }
+    </style>
   </head>
-    <body>
-        <h1>CoPlan — 共享行程</h1>
-        <p id="status">連線中…</p>
-        <p id="mcp">偵測 WebMCP…</p>
+  <body>
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="brand">CoPlan</span>
+        <span class="room-id" id="roomIdLabel"></span>
+      </div>
+      <button id="copyInvite" class="btn btn-secondary">Copy invite link</button>
+    </header>
 
+    <div class="layout">
+      <aside class="col col-left panel">
+        <div class="status-group">
+          <p id="status" class="pill">Connecting…</p>
+          <p id="mcp" class="pill">Detecting WebMCP…</p>
+        </div>
 
-        <fieldset>
-            <legend>新增行程</legend>
-            <select id="type">
-            <option>景點</option>
-            <option>餐廳</option>
-            <option>交通</option>
-            <option>住宿</option>
+        <section class="side-section">
+          <h2 class="section-title">Travelers</h2>
+          <p id="members" class="members-list"></p>
+          <p class="agent-notice">Tools exposed to your agent can read this room's itinerary. Anything here may be sent to your agent provider.</p>
+        </section>
+
+        <section class="side-section">
+          <h2 class="section-title">My Budget</h2>
+          <div class="budget-form">
+            <label for="budget">Budget limit NT$</label>
+            <input id="budget" type="number" min="0" step="1000" />
+            <button id="setBudget" class="btn btn-secondary">Set</button>
+          </div>
+          <p id="budgetStatus" class="budget-status tabular-nums"></p>
+          <button id="checkout" class="btn btn-primary">Checkout</button>
+        </section>
+      </aside>
+
+      <main class="col col-center">
+        <fieldset class="panel add-form">
+          <legend class="section-title">Add Activity</legend>
+          <div class="add-form-row">
+            <select id="type" aria-label="Activity type">
+              <option>Sight</option>
+              <option>Food</option>
+              <option>Transit</option>
+              <option>Stay</option>
             </select>
-            <select id="day">
-            <option value="1">Day 1</option>
-            <option value="2">Day 2</option>
-            <option value="3">Day 3</option>
+            <select id="day" aria-label="Day">
+              <option value="1">Day 1</option>
+              <option value="2">Day 2</option>
+              <option value="3">Day 3</option>
             </select>
-            <input id="start" type="time" value="09:00" />
-            <input id="end" type="time" value="11:00" />
-            <input id="title" placeholder="行程名稱" />
-            <button id="add">新增</button>
+            <input id="start" type="time" value="09:00" aria-label="Start time" />
+            <input id="end" type="time" value="11:00" aria-label="End time" />
+            <input id="title" placeholder="Activity title" aria-label="Activity title" />
+            <button id="add" class="btn btn-primary">Add</button>
+          </div>
         </fieldset>
 
-        
-        <p>房間成員：<span id="members"></span></p>
-        <div id="board"></div>
-        <h3>Agent 活動時間軸</h3>
+        <div id="approvals"></div>
+        <div id="board" class="board"></div>
+      </main>
+
+      <aside class="col col-right panel">
+        <h2 class="section-title">Agent Activity Timeline</h2>
         <div id="timeline"></div>
+      </aside>
+    </div>
 
-        <script>
-            // ═══ ① 連線層 ═══
-                // ═══ ① 從網址讀房號與身分 ═══
-            // 網址格式：/r/<房號>?as=<暱稱>   例如 /r/tokyo?as=Cindy
-            const path = location.pathname.match(/^\/r\/([\w-]+)/);
-            const roomId = path ? path[1] : "lobby";
-            const myName = new URLSearchParams(location.search).get("as") || "匿名旅伴";
+    <script>
+        // ═══ ① 連線層 ═══
+            // ═══ ① 從網址讀房號與身分 ═══
+        // 網址格式：/r/<房號>?as=<暱稱>   例如 /r/tokyo?as=Cindy
+        const path = location.pathname.match(/^\/r\/([\w-]+)/);
+        const roomId = path ? path[1] : "lobby";
+        const myName = (new URLSearchParams(location.search).get("as") || "").slice(0, 20).trim() || "Anonymous Traveler";
 
-            const proto = location.protocol === "https:" ? "wss" : "ws";
-            const ws = new WebSocket(`${proto}://${location.host}/api/room/${roomId}`);
+        // 這個瀏覽器分頁的身分。刻意每次載入重新產生、刻意不存 localStorage ——
+        // 存了的話同一台電腦開新分頁會拿到同一個 id，「跨 session 確認」的保護就失效了。
+        const sessionId = crypto.randomUUID();
+        document.getElementById("roomIdLabel").textContent = `Room ${roomId}`;
 
-
-            const status = document.getElementById("status");  
-            const board = document.getElementById("board"); 
-            let items = [];   
-            let members = {};
-            let log = [];
-
-            ws.onopen = () => {
-                status.textContent = "✅ 已連線";
-                ws.send(JSON.stringify({ t: "join", name: me() }));
-                };
-            ws.onclose = () => { status.textContent = "❌ 連線中斷"; };
-            ws.onmessage = (event) => {
-                const state = JSON.parse(event.data);
-                items = state.items;
-                log = state.log;
-                members = state.members || {};
-                render();
-                renderLog();
-                renderMembers();
-                };
-            // ═══ ② 身分：接縫函式，之後要換成登入只需改這裡 ═══
-            const me = () => myName;
-
-            // ═══ ③ 動作層：唯一入口 ═══
-            function addActivity(activity, viaAgent) {
-            if (!activity.title) return "行程名稱不能空白。";
-            ws.send(JSON.stringify({
-                t: "add",
-                activity: { ...activity, createdBy: me(), viaAgent }
-            }));
-            return `已新增「${activity.title}」到 Day ${activity.day} ${activity.start}–${activity.end}。`;
-            }
-
-            function updateActivity(id, patch, viaAgent) {
-              ws.send(JSON.stringify({ t: "update", id, patch, by: me(), viaAgent }));
-              return `已更新該行程。`;
-            }
-
-            function removeActivity(id, viaAgent) {
-              ws.send(JSON.stringify({ t: "remove", id, by: me(), viaAgent }));
-              return `已移除該行程。`;
-            }
-
-            // ═══ ④ 畫面 ═══
-            function render() {
-                board.innerHTML = "";
-                for (const day of [1, 2, 3]) {
-                    const dayItems = items
-                    .filter(a => Number(a.day) === day)
-                    .sort((a, b) => a.start.localeCompare(b.start));
-
-                    const section = document.createElement("section");
-                    section.innerHTML = `<h3>Day ${day}</h3>`;
-
-                    if (dayItems.length === 0) {
-                    section.innerHTML += `<p style="color:#888">還沒有安排</p>`;
-                    }
-                        for (const a of dayItems) {
-                            const div = document.createElement("div");
-                            const conflicted = a.conflictWith && a.conflictWith.length > 0;
-                            div.style.cssText = `border:1px solid ${conflicted ? "#e07b00" : "#ddd"};
-                                background:${conflicted ? "#fff4e0" : "#fff"};
-                                border-radius:6px;padding:8px;margin:4px 0`;
-
-                            // 時間可直接編輯：改完送出，等伺服器廣播回來才重繪
-                            const startEl = document.createElement("input");
-                            startEl.type = "time";
-                            startEl.value = a.start;
-                            startEl.onchange = () => updateActivity(a.id, { start: startEl.value }, false);
-
-                            const endEl = document.createElement("input");
-                            endEl.type = "time";
-                            endEl.value = a.end;
-                            endEl.onchange = () => updateActivity(a.id, { end: endEl.value }, false);
-
-                            const info = document.createElement("span");
-                            info.innerHTML = ` ${a.title}
-                                <small>［${a.type}］
-                                <span style="color:${colorOf(a.createdBy)};font-weight:bold">${a.createdBy}</span>
-                                ${a.viaAgent ? "🤖" : "🙋"}</small>`;
-
-                            const del = document.createElement("button");
-                            del.textContent = "×";
-                            del.title = "移除這個行程";
-                            del.style.cssText = "float:right;border:none;background:none;cursor:pointer;font-size:16px;color:#888";
-                            del.onclick = () => removeActivity(a.id, false);
-
-                            div.append(startEl, document.createTextNode("–"), endEl, info, del);
-
-                            if (conflicted) {
-                                const warn = document.createElement("div");
-                                warn.style.cssText = "color:#e07b00;font-size:13px";
-                                warn.textContent = `⚠️ 與其他 ${a.conflictWith.length} 個行程時間重疊`;
-                                div.appendChild(warn);
-                            }
-
-                            section.appendChild(div);
-                        }
-                    board.appendChild(section);
-                }
-            }
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        const ws = new WebSocket(`${proto}://${location.host}/api/room/${roomId}`);
 
 
-            function renderLog() {
-                const el = document.getElementById("timeline");
-                el.innerHTML = "";
-                // 最新的排最上面
-                for (const e of [...log].reverse()) {
-                    const div = document.createElement("div");
-                    div.style.cssText = "border-bottom:1px solid #eee;padding:6px 0;font-size:13px";
-                    const time = new Date(e.at).toLocaleTimeString("zh-TW", { hour12: false });
-                    div.innerHTML = `
-                    <span style="color:#888">${time}</span>
-                    <b>${e.viaAgent ? "🤖 " + e.who + " 的 Agent" : "🙋 " + e.who}</b>
-                    <code style="background:#f0f0f0;padding:1px 4px">${e.action}</code>
-                    ${e.summary}
-                    `;
-                    el.appendChild(div);
-                }
-            }
+        const status = document.getElementById("status");
+        const board = document.getElementById("board");
+        let items = [];
+        let members = {};
+        let log = [];
+        let approvals = [];
 
-
-            // 從名字算出固定顏色：同一個名字永遠同色，不需儲存
-            const PALETTE = ["#2563eb", "#db2777", "#16a34a", "#ea580c", "#7c3aed", "#0891b2"];
-            function colorOf(name) {
-            let hash = 0;
-            for (const ch of String(name)) hash = (hash * 31 + ch.charCodeAt(0)) % 10000;
-            return PALETTE[hash % PALETTE.length];
-            }
-
-            function renderMembers() {
-            const el = document.getElementById("members");
-            el.innerHTML = Object.values(members).map(m =>
-                `<span style="color:${colorOf(m.name)};font-weight:bold;margin-right:10px">● ${m.name}</span>`
-            ).join("");
-            }
-
-            // ═══ ⑤ 介面 A：人的表單 ═══
-            document.getElementById("add").onclick = () => {
-            const titleEl = document.getElementById("title");
-            addActivity({
-                type: document.getElementById("type").value,
-                day: Number(document.getElementById("day").value),
-                start: document.getElementById("start").value,
-                end: document.getElementById("end").value,
-                title: titleEl.value.trim(),
-            }, false);
-            titleEl.value = "";
+        ws.onopen = () => {
+            status.textContent = "✅ Connected";
+            status.className = "pill ok";
+            ws.send(JSON.stringify({ t: "join", name: me() }));
             };
+        ws.onclose = () => {
+            status.textContent = "❌ Disconnected";
+            status.className = "pill bad";
+            };
+        ws.onmessage = (event) => {
+            const state = JSON.parse(event.data);
+            items = state.items;
+            log = state.log;
+            members = state.members || {};
+            approvals = state.pendingApprovals || [];
+            maybeReset(items, approvals);
+            maybeSeedDemo(items);
+            render();
+            renderLog();
+            renderMembers();
+            renderBudget();
+            renderApprovals();
+            };
+        // ═══ ② 身分：接縫函式，之後要換成登入只需改這裡 ═══
+        const me = () => myName;
 
-            // ═══ ⑤ 介面 B：Agent 的工具 ═══
-            const mcpStatus = document.getElementById("mcp");
-            let registered = false;
+        // 使用者與 Agent 可以控制的字串（名字、標題、稽核摘要）一律轉義後才進 innerHTML。
+        // 這個房間是多人共享的，未轉義的字串會存進伺服器並在所有成員的瀏覽器執行（儲存型 XSS）。
+        function esc(v) {
+          return String(v ?? "").replace(/[&<>"']/g, c => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+          })[c]);
+        }
 
-            setInterval(() => {
-            const mc = document.modelContext || navigator.modelContext || window.modelContext;
-            mcpStatus.textContent = mc ? "✅ WebMCP 已就緒" : "❌ WebMCP 不可用";
-            if (!mc || registered) return;
-            registered = true;
+        // ═══ ③ 動作層：唯一入口 ═══
+        function addActivity(activity, viaAgent) {
+        if (!activity.title) return "Activity title can't be empty.";
+        ws.send(JSON.stringify({
+            t: "add",
+            activity: { ...activity, createdBy: me(), viaAgent }
+        }));
+        return `Added "${activity.title}" to Day ${activity.day} ${activity.start}–${activity.end}.`;
+        }
 
-            mc.registerTool({
-                name: "list_itinerary",
-                description: "讀取這個多人共享行程表目前的所有項目，包含天數、時間、名稱、類型與提出者。在新增行程前先呼叫這個，避免與其他人的安排衝突。",
-                inputSchema: { type: "object", properties: {} },
-                execute: () => ({
-                content: [{
-                    type: "text",
-                    text: items.length
-                    ? items.map(a => `[${a.id}] Day ${a.day} ${a.start}–${a.end}｜${a.title}［${a.type}］（${a.createdBy}）`).join("\n")
-                    : "行程表目前是空的。"
-                }]
-                })
-            });
+        function updateActivity(id, patch, viaAgent) {
+          ws.send(JSON.stringify({ t: "update", id, patch, by: me(), viaAgent }));
+          return `Updated the activity.`;
+        }
 
-            mc.registerTool({
-                name: "add_activity",
-                description: "代表目前使用者，在多人共享的行程表上新增一個項目。所有成員會即時看到。",
-                inputSchema: {
-                type: "object",
-                properties: {
-                    type: { type: "string", enum: ["景點", "餐廳", "交通", "住宿"], description: "行程類型" },
-                    day: { type: "number", description: "第幾天，從 1 開始" },
-                    start: { type: "string", description: "開始時間，24 小時制 HH:MM" },
-                    end: { type: "string", description: "結束時間，24 小時制 HH:MM" },
-                    title: { type: "string", description: "行程名稱，例如「築地市場」" }
-                },
-                required: ["type", "day", "start", "end", "title"]
-                },
-                execute: (a) => ({
-                content: [{ type: "text", text: addActivity(a, true) }]
-                })
-            });
+        function removeActivity(id, viaAgent) {
+          ws.send(JSON.stringify({ t: "remove", id, by: me(), viaAgent }));
+          return `Removed the activity.`;
+        }
 
-            mc.registerTool({
-                name: "update_activity",
-                description: "修改共享行程表上既有項目的時間、名稱或類型。需先用 list_itinerary 取得項目 id。時間衝突時仍會修改，但會被標記提醒成員。",
-                inputSchema: {
-                type: "object",
-                properties: {
-                    id: { type: "string", description: "要修改的項目 id" },
-                    day: { type: "number", description: "第幾天" },
-                    start: { type: "string", description: "開始時間 HH:MM" },
-                    end: { type: "string", description: "結束時間 HH:MM" },
-                    title: { type: "string", description: "行程名稱" }
-                },
-                required: ["id"]
-                },
-                execute: ({ id, ...patch }) => {
-                const target = items.find(x => x.id === id);
-                if (!target) return { content: [{ type: "text", text: `找不到 id 為 ${id} 的項目，請先用 list_itinerary 確認。` }] };
-                updateActivity(id, patch, true);
-                return { content: [{ type: "text", text: `已更新「${target.title}」。` }] };
+        // 設定個人預算上限
+        function setBudget(amount, viaAgent) {
+          ws.send(JSON.stringify({ t: "set_budget", budget: Number(amount), by: me(), viaAgent }));
+          return `Set the budget limit to NT$${Number(amount).toLocaleString()}.`;
+        }
+
+        // 結帳請求：只建立待確認請求，永遠不會完成付款。
+        // 帶上 sessionId，讓伺服器知道是哪個分頁發起的——發起的分頁不得自行確認。
+        function requestCheckout(viaAgent) {
+          ws.send(JSON.stringify({ t: "request_checkout", by: me(), viaAgent, sessionId }));
+          return `Checkout request sent — it needs to be approved on another device or by another member.`;
+        }
+
+        // 確認付款。伺服器會擋掉「發起請求的那個 session 自己確認」的情況，
+        // 前端也不會在該 session 渲染這顆按鈕（雙重保險）。
+        function approveCheckout(id) {
+          ws.send(JSON.stringify({ t: "approve_checkout", id, by: me(), sessionId, viaAgent: false }));
+        }
+        function rejectCheckout(id) {
+          ws.send(JSON.stringify({ t: "reject_checkout", id, by: me() }));
+        }
+
+        // 計算「我」目前未付款的待訂金額（與伺服器同一套規則）
+        function mySpent() {
+          return items
+            .filter(a => a.createdBy === me() && Number(a.price) > 0 && !a.paid)
+            .reduce((sum, a) => sum + Number(a.price), 0);
+        }
+
+        // ═══ ⑥ 示範資料（?seed=1）與重置（?reset=1）═══
+        // 純前端流程，用既有的 add / remove / reject_checkout 訊息組成，不新增後端訊息類型、不動 src/index.js。
+        const DEMO_ITEMS = [
+          { day: 1, start: "09:00", end: "11:00", type: "Sight", title: "Senso-ji Temple", createdBy: "Cindy" },
+          { day: 1, start: "10:00", end: "12:00", type: "Sight", title: "Ueno Park", createdBy: "Bob" },
+          { day: 1, start: "12:30", end: "13:30", type: "Food", title: "Tsukiji Outer Market Lunch", price: 1200, createdBy: "Cindy" },
+          { day: 2, start: "08:00", end: "09:00", type: "Transit", title: "Shinkansen to Hakone", price: 3400, createdBy: "Bob" },
+          { day: 2, start: "15:00", end: "16:00", type: "Stay", title: "Hakone Ryokan Check-in", price: 8000, createdBy: "Cindy" },
+          { day: 2, start: "15:30", end: "17:00", type: "Sight", title: "Lake Ashi Cruise", createdBy: "Bob" },
+          { day: 3, start: "12:00", end: "13:00", type: "Food", title: "Ramen at Ichiran Shinjuku", createdBy: "Cindy" },
+          { day: 3, start: "14:00", end: "16:00", type: "Sight", title: "teamLab Planets", price: 3800, createdBy: "Bob" },
+        ];
+
+        let seedAttempted = false;
+        let resetAttempted = false;
+
+        // 只在房間是空的時候塞示範資料，避免覆蓋既有行程。
+        // 直接送 add 訊息、不走 addActivity()，因為示範資料要分屬 Cindy 與 Bob 兩個成員，
+        // 不能被 addActivity() 強制寫成目前這個 session 的名字。
+        function maybeSeedDemo(currentItems) {
+          if (seedAttempted) return;
+          if (new URLSearchParams(location.search).get("seed") !== "1") return;
+          seedAttempted = true;
+          if (currentItems.length > 0) return;
+
+          for (const item of DEMO_ITEMS) {
+            ws.send(JSON.stringify({
+              t: "add",
+              activity: {
+                type: item.type, day: item.day, start: item.start, end: item.end,
+                title: item.title, price: item.price, createdBy: item.createdBy, viaAgent: false,
+              },
+            }));
+          }
+        }
+
+        // 清空行程與待確認請求。用既有的 remove / reject_checkout 訊息逐筆清，不新增後端操作。
+        // 日誌沒有清除機制——現有訊息類型只能新增/移除單筆項目，沒有「清空日誌」這個操作，
+        // 這超出本任務「不動 src/index.js」的範圍，故意不做，見回報。
+        function maybeReset(currentItems, currentApprovals) {
+          if (resetAttempted) return;
+          const params = new URLSearchParams(location.search);
+          if (params.get("reset") !== "1") return;
+          resetAttempted = true;
+
+          for (const a of currentItems) {
+            ws.send(JSON.stringify({ t: "remove", id: a.id, by: me(), viaAgent: false }));
+          }
+          for (const p of currentApprovals) {
+            ws.send(JSON.stringify({ t: "reject_checkout", id: p.id, by: me() }));
+          }
+
+          // 移除網址上的 reset 參數，避免重整又清一次。
+          params.delete("reset");
+          const qs = params.toString();
+          history.replaceState(null, "", location.pathname + (qs ? `?${qs}` : ""));
+        }
+
+        // ═══ ④ 畫面 ═══
+        function render() {
+            board.innerHTML = "";
+
+            if (items.length === 0) {
+                board.innerHTML = `<p class="empty-board">No plans yet. Add one with the form above, or ask your agent to help plan.</p>`;
+                return;
+            }
+
+            for (const day of [1, 2, 3]) {
+                const dayItems = items
+                .filter(a => Number(a.day) === day)
+                .sort((a, b) => a.start.localeCompare(b.start));
+
+                const section = document.createElement("section");
+                section.className = "day-section";
+                section.innerHTML = `<h3 class="section-title">Day ${day}</h3>`;
+
+                if (dayItems.length === 0) {
+                section.innerHTML += `<p class="empty-day">Nothing planned</p>`;
                 }
-            });
+                    for (const a of dayItems) {
+                        const div = document.createElement("div");
+                        const conflicted = a.conflictWith && a.conflictWith.length > 0;
+                        div.className = "card" + (conflicted ? " conflict" : "");
 
-            mc.registerTool({
-                name: "remove_activity",
-                description: "從共享行程表移除一個項目。這會影響所有成員，移除前請先向使用者確認。需先用 list_itinerary 取得項目 id。",
-                inputSchema: {
-                type: "object",
-                properties: { id: { type: "string", description: "要移除的項目 id" } },
-                required: ["id"]
-                },
-                execute: ({ id }) => {
-                const target = items.find(x => x.id === id);
-                if (!target) return { content: [{ type: "text", text: `找不到 id 為 ${id} 的項目。` }] };
-                removeActivity(id, true);
-                return { content: [{ type: "text", text: `已移除「${target.title}」。` }] };
+                        const row1 = document.createElement("div");
+                        row1.className = "card-row1";
+
+                        // 時間可直接編輯：改完送出，等伺服器廣播回來才重繪
+                        const startEl = document.createElement("input");
+                        startEl.type = "time";
+                        startEl.value = a.start;
+                        startEl.setAttribute("aria-label", "Start time");
+                        startEl.onchange = () => updateActivity(a.id, { start: startEl.value }, false);
+
+                        const endEl = document.createElement("input");
+                        endEl.type = "time";
+                        endEl.value = a.end;
+                        endEl.setAttribute("aria-label", "End time");
+                        endEl.onchange = () => updateActivity(a.id, { end: endEl.value }, false);
+
+                        const titleSpan = document.createElement("span");
+                        titleSpan.className = "card-title";
+                        titleSpan.textContent = a.title;
+
+                        row1.append(startEl, document.createTextNode("–"), endEl, titleSpan);
+
+                        const row2 = document.createElement("div");
+                        row2.className = "card-row2";
+                        row2.innerHTML = `[${esc(a.type)}]
+                            <span class="proposer" style="color:${colorOf(a.createdBy)}">${esc(a.createdBy)}</span>
+                            ${a.viaAgent ? "🤖" : "🙋"}`;
+
+                        // 價格欄位：填了價格就代表這個行程需要預訂，會進入結帳金額
+                        const priceEl = document.createElement("input");
+                        priceEl.type = "number";
+                        priceEl.min = "0";
+                        priceEl.placeholder = "Price";
+                        priceEl.value = a.price || "";
+                        priceEl.className = "price-input";
+                        priceEl.setAttribute("aria-label", "Price");
+                        priceEl.disabled = !!a.paid;
+                        priceEl.onchange = () => updateActivity(a.id, { price: Number(priceEl.value) }, false);
+                        row2.appendChild(priceEl);
+
+                        if (a.paid) {
+                            const paidTag = document.createElement("span");
+                            paidTag.className = "card-paid";
+                            paidTag.textContent = "✅ Paid";
+                            row2.appendChild(paidTag);
+                        }
+
+                        const del = document.createElement("button");
+                        del.textContent = "×";
+                        del.className = "card-del";
+                        del.setAttribute("aria-label", "Remove this activity");
+                        del.onclick = () => removeActivity(a.id, false);
+                        row2.appendChild(del);
+
+                        div.append(row1, row2);
+
+                        if (conflicted) {
+                            const warn = document.createElement("div");
+                            warn.className = "card-warn";
+                            warn.textContent = `⚠️ Overlaps with ${a.conflictWith.length} other ${a.conflictWith.length === 1 ? "item" : "items"}`;
+                            div.appendChild(warn);
+                        }
+
+                        section.appendChild(div);
+                    }
+                board.appendChild(section);
+            }
+        }
+
+
+        function renderLog() {
+            const el = document.getElementById("timeline");
+            el.innerHTML = "";
+            if (log.length === 0) {
+                el.innerHTML = `<p class="empty-timeline">No activity yet</p>`;
+                return;
+            }
+            // 最新的排最上面
+            for (const e of [...log].reverse()) {
+                const div = document.createElement("div");
+                div.className = "log-entry";
+                const time = new Date(e.at).toLocaleTimeString("en-US", { hour12: false });
+                div.innerHTML = `
+                <span class="log-time tabular-nums">${time}</span>
+                <b style="color:${colorOf(e.who)}">${e.viaAgent ? "🤖 " + esc(e.who) + "'s Agent" : "🙋 " + esc(e.who)}</b>
+                <code class="log-action">${esc(e.action)}</code>
+                <span class="log-summary">${esc(e.summary)}</span>
+                `;
+                el.appendChild(div);
+            }
+        }
+
+
+        // 從名字算出固定顏色：同一個名字永遠同色，不需儲存
+        const PALETTE = ["#2563eb", "#db2777", "#16a34a", "#ea580c", "#7c3aed", "#0891b2"];
+        function colorOf(name) {
+        let hash = 0;
+        for (const ch of String(name)) hash = (hash * 31 + ch.charCodeAt(0)) % 10000;
+        return PALETTE[hash % PALETTE.length];
+        }
+
+        function renderMembers() {
+        const el = document.getElementById("members");
+        el.innerHTML = Object.values(members).map(m =>
+            `<span class="member-tag" style="color:${colorOf(m.name)}">● ${esc(m.name)}</span>`
+        ).join("");
+        }
+
+        // 預算列：顯示我目前的待訂金額與上限，超支時標紅。
+        // 這裡的計算規則刻意與伺服器的 spentBy 一致，兩邊算出來必須相同。
+        function renderBudget() {
+            const el = document.getElementById("budgetStatus");
+            const budgetInput = document.getElementById("budget");
+            const myBudget = Number(members[me()]?.budget) || 0;
+
+            // 只在使用者沒有正在編輯時才回填，避免打字打到一半被蓋掉
+            if (document.activeElement !== budgetInput) {
+                budgetInput.value = myBudget || "";
+            }
+
+            const spent = mySpent();
+            const over = myBudget > 0 && spent > myBudget;
+            el.innerHTML = myBudget
+                ? `Pending <b style="color:${over ? "var(--danger)" : "var(--ok)"}">NT$${spent.toLocaleString()}</b>
+                   / limit NT$${myBudget.toLocaleString()}
+                   ${over ? '<span style="color:var(--danger)">⚠️ Over budget</span>' : ""}`
+                : `Pending <b>NT$${spent.toLocaleString()}</b> (no budget limit set)`;
+        }
+
+        // 待確認的結帳請求。
+        //
+        // 這裡的設計是整個作品的核心：能操作瀏覽器的 Agent 點得到任何「存在」的按鈕，
+        // 所以光是在 WebMCP 工具層不開放付款並不夠。真正的邊界是——
+        // 發起請求的那個 session，確認按鈕**根本不會被建立出來**（不是 disabled，是 DOM 裡沒有）。
+        // 付款只能來自另一個 session：同行成員的視窗，或使用者自己的手機。
+        function renderApprovals() {
+            const el = document.getElementById("approvals");
+            el.innerHTML = "";
+            for (const p of approvals) {
+                const box = document.createElement("div");
+                box.className = "approval-box" + (p.overBudget ? " over-budget" : "");
+
+                const who = p.viaAgent === false ? `<b style="color:${colorOf(p.requestedBy)}">${esc(p.requestedBy)}</b>`
+                    : `🤖 <b style="color:${colorOf(p.requestedBy)}">${esc(p.requestedBy)}'s Agent</b>`;
+
+                const text = document.createElement("div");
+                text.className = "approval-text";
+                text.innerHTML = `${who}
+                    requested checkout of <b class="tabular-nums">NT$${p.total.toLocaleString()}</b> (${p.itemIds.length} ${p.itemIds.length === 1 ? "item" : "items"})
+                    ${p.overBudget ? '<span style="color:var(--danger)">⚠️ Over budget limit</span>' : ""}`;
+                box.appendChild(text);
+
+                const isRequester = p.requestedBySession === sessionId;
+
+                if (isRequester) {
+                    // 發起的分頁：不建立確認按鈕，只說明該去哪裡確認。
+                    const note = document.createElement("div");
+                    note.className = "approval-note";
+                    note.innerHTML = `🔒 For your protection, <b>the device that requested this payment cannot approve it</b>.<br>
+                        Open this room on your phone or another device, or ask a fellow traveler to approve:<br>
+                        <code>${esc(location.href)}</code>`;
+                    box.appendChild(note);
+
+                    // 否決不需要保護——取消一筆請求沒有風險，任何 session 都可以做。
+                    const no = document.createElement("button");
+                    no.textContent = "Cancel this request";
+                    no.className = "btn btn-secondary";
+                    no.onclick = () => rejectCheckout(p.id);
+                    box.appendChild(no);
+                } else {
+                    const note = document.createElement("div");
+                    note.className = "approval-note";
+                    note.textContent = "This request came from another device. You can approve it here.";
+                    box.appendChild(note);
+
+                    const actions = document.createElement("div");
+                    actions.className = "approval-actions";
+
+                    const ok = document.createElement("button");
+                    ok.textContent = "Approve payment";
+                    ok.className = "btn btn-primary";
+                    ok.onclick = () => approveCheckout(p.id);
+
+                    const no = document.createElement("button");
+                    no.textContent = "Decline";
+                    no.className = "btn btn-secondary";
+                    no.onclick = () => rejectCheckout(p.id);
+
+                    actions.append(ok, no);
+                    box.appendChild(actions);
                 }
-            });
-            }, 500);
-        </script>
-        </body>
+                el.appendChild(box);
+            }
+        }
+
+        // ═══ ⑤ 介面 A：人的表單 ═══
+        document.getElementById("add").onclick = () => {
+        const titleEl = document.getElementById("title");
+        addActivity({
+            type: document.getElementById("type").value,
+            day: Number(document.getElementById("day").value),
+            start: document.getElementById("start").value,
+            end: document.getElementById("end").value,
+            title: titleEl.value.trim(),
+        }, false);
+        titleEl.value = "";
+        };
+
+        document.getElementById("setBudget").onclick = () => {
+            setBudget(document.getElementById("budget").value, false);
+        };
+
+        // 人按結帳一樣走 request_checkout，只是人可以接著自己按確認。
+        // 保持同一條路徑，稽核紀錄才會一致。
+        document.getElementById("checkout").onclick = () => requestCheckout(false);
+
+        // 標題列：複製邀請連結，兩秒後恢復按鈕文字
+        const copyInviteBtn = document.getElementById("copyInvite");
+        copyInviteBtn.onclick = async () => {
+            try {
+                await navigator.clipboard.writeText(location.href);
+            } catch (e) {
+                // 剪貼簿權限被拒時不中斷流程，使用者仍可手動複製網址列
+            }
+            copyInviteBtn.textContent = "Copied";
+            setTimeout(() => { copyInviteBtn.textContent = "Copy invite link"; }, 2000);
+        };
+
+        // ═══ ⑤ 介面 B：Agent 的工具 ═══
+        const mcpStatus = document.getElementById("mcp");
+        let registered = false;
+
+        setInterval(() => {
+        const mc = document.modelContext || navigator.modelContext || window.modelContext;
+        mcpStatus.textContent = mc ? "✅ WebMCP ready" : "❌ WebMCP unavailable";
+        mcpStatus.className = "pill " + (mc ? "ok" : "bad");
+        if (!mc || registered) return;
+        registered = true;
+
+        mc.registerTool({
+            name: "list_itinerary",
+            description: "Read every item currently on this shared itinerary, including day, time, title, type, and who proposed it. Call this before adding an activity to avoid clashing with what others have already planned.",
+            inputSchema: { type: "object", properties: {} },
+            execute: () => ({
+            content: [{
+                type: "text",
+                text: items.length
+                ? items.map(a => `[${a.id}] Day ${a.day} ${a.start}–${a.end} | ${a.title} [${a.type}] (${a.createdBy})`).join("\n")
+                : "The itinerary is currently empty."
+            }]
+            })
+        });
+
+        mc.registerTool({
+            name: "add_activity",
+            description: "Add a new item to the shared itinerary on behalf of the current user. All members see it in real time.",
+            inputSchema: {
+            type: "object",
+            properties: {
+                type: { type: "string", enum: ["Sight", "Food", "Transit", "Stay"], description: "Activity type" },
+                day: { type: "number", description: "Which day, starting from 1" },
+                start: { type: "string", description: "Start time, 24-hour HH:MM" },
+                end: { type: "string", description: "End time, 24-hour HH:MM" },
+                title: { type: "string", description: "Activity title, e.g. \"Tsukiji Market\"" },
+                price: { type: "number", description: "Estimated cost (NT$). Filling this in marks the item as needing payment and includes it in checkout; leave it blank for free activities." }
+            },
+            required: ["type", "day", "start", "end", "title"]
+            },
+            execute: (a) => ({
+            content: [{ type: "text", text: addActivity(a, true) }]
+            })
+        });
+
+        mc.registerTool({
+            name: "update_activity",
+            description: "Update the time, title, or type of an existing item on the shared itinerary. Get the item id from list_itinerary first. The update still applies even if it creates a time conflict — conflicting items are flagged for all members. This can modify items proposed by other travelers, not just your own — confirm with the user before editing an item they did not create.",
+            inputSchema: {
+            type: "object",
+            properties: {
+                id: { type: "string", description: "Id of the item to update" },
+                day: { type: "number", description: "Which day" },
+                start: { type: "string", description: "Start time HH:MM" },
+                end: { type: "string", description: "End time HH:MM" },
+                title: { type: "string", description: "Activity title" },
+                price: { type: "number", description: "Estimated cost (NT$)" }
+            },
+            required: ["id"]
+            },
+            execute: ({ id, ...patch }) => {
+            const target = items.find(x => x.id === id);
+            if (!target) return { content: [{ type: "text", text: `No item found with id ${id}. Use list_itinerary to check first.` }] };
+            updateActivity(id, patch, true);
+            return { content: [{ type: "text", text: `Updated "${target.title}".` }] };
+            }
+        });
+
+        mc.registerTool({
+            name: "remove_activity",
+            description: "Remove an item from the shared itinerary. This removes it for everyone, including items proposed by other travelers — always confirm with the user before removing an item they did not create. Get the item id from list_itinerary first.",
+            inputSchema: {
+            type: "object",
+            properties: { id: { type: "string", description: "Id of the item to remove" } },
+            required: ["id"]
+            },
+            execute: ({ id }) => {
+            const target = items.find(x => x.id === id);
+            if (!target) return { content: [{ type: "text", text: `No item found with id ${id}.` }] };
+            removeActivity(id, true);
+            return { content: [{ type: "text", text: `Removed "${target.title}".` }] };
+            }
+        });
+
+        // 唯讀：讓 Agent 在提議花錢前先知道預算狀況
+        mc.registerTool({
+            name: "get_budget_status",
+            description: "Look up the current user's budget limit, planned-but-unpaid spending, and remaining amount. Call this before adding a priced activity or requesting checkout to make sure it won't go over budget.",
+            inputSchema: { type: "object", properties: {} },
+            execute: () => {
+            const budget = Number(members[me()]?.budget) || 0;
+            const spent = mySpent();
+            return { content: [{ type: "text", text: budget
+                ? `${me()}'s budget limit is NT$${budget.toLocaleString()}, current pending spend is NT$${spent.toLocaleString()}, leaving NT$${(budget - spent).toLocaleString()}.`
+                : `${me()} has not set a budget limit yet. Current pending spend is NT$${spent.toLocaleString()}.` }] };
+            }
+        });
+
+        // 核心設計：Agent 只能「請求」結帳，永遠無法完成付款。
+        // 這不是靠 description 拜託它自律 —— 這條路徑在結構上就沒有完成交易的能力，
+        // 付款只能由人在畫面上按下確認。
+        mc.registerTool({
+            name: "request_checkout",
+            description: "Submit a checkout request for the current user, bundling all priced, unpaid itinerary items together. Important: this tool cannot and will not complete payment. Payment must be approved on another device or by another member — the tab that made this request will not show an approve button, so you cannot complete it yourself. After calling this, tell the user to open the same room URL on their phone, or ask a fellow traveler to approve.",
+            inputSchema: { type: "object", properties: {} },
+            execute: () => {
+            const spent = mySpent();
+            if (spent === 0) return { content: [{ type: "text", text: "There's nothing that needs payment right now." }] };
+            requestCheckout(true);
+            return { content: [{ type: "text", text: `Checkout request for NT$${spent.toLocaleString()} sent. I can't complete payment, and this tab won't show an approve button — please open ${location.href} on your phone or another device to approve, or ask a fellow traveler to approve it for you.` }] };
+            }
+        });
+        }, 500);
+    </script>
+  </body>
 </html>
