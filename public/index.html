@@ -299,6 +299,7 @@
       .ld-join-row { display: flex; gap: 8px; flex-wrap: wrap; }
       .ld-join-row input { flex: 1 1 160px; min-width: 140px; }
       .ld-join-row .btn { flex: 0 0 auto; }
+      .ld-join-error { font-size: 12.5px; color: var(--danger); margin: 10px 0 0; }
 
       /* 付款閘門展示：直接沿用房間頁的 .approval-banner 樣式，不重造一套——
          這是刻意的：著陸頁的示範長得跟房間頁裡真的會出現的東西一模一樣。 */
@@ -455,6 +456,7 @@
             <input id="ldJoinRoom" data-i18n-placeholder="ldRoomPh" placeholder="Room code (blank = new room)" aria-label="Room code" />
             <button id="ldJoinBtn" class="btn btn-secondary" data-i18n="ldJoinBtn">Enter</button>
           </div>
+          <p id="ldJoinError" class="ld-join-error" data-i18n="ldRoomInvalid" hidden>Room codes use English letters or numbers only — try a different code.</p>
         </div>
       </section>
 
@@ -547,6 +549,7 @@
             ldJoinSub: "Meeting up with travel companions? Use the same room code and you'll land in the same trip.",
             ldRoomPh: "Room code (blank = new room)",
             ldJoinBtn: "Enter",
+            ldRoomInvalid: "Room codes use English letters or numbers only — try a different code.",
             ldGateEyebrow: "The one thing agents can't do",
             ldGateHeadline: "Agents can price the trip. They can't press pay.",
             ldGateBody: "Not because a prompt asked it to behave — the approve button structurally does not exist in the browser tab that requested checkout. It only ever exists on another device, or another traveler's screen.",
@@ -602,6 +605,7 @@
             ldJoinSub: "要跟旅伴會合？用同一個房號，就會進到同一份行程。",
             ldRoomPh: "房號（留白＝開新房間）",
             ldJoinBtn: "進入",
+            ldRoomInvalid: "房號請用英文字母或數字——換一個試試。",
             ldGateEyebrow: "Agent 唯一做不到的事",
             ldGateHeadline: "Agent 能把行程湊好、把價格算出來，但按不下確認付款。",
             ldGateBody: "不是靠提示詞拜託它自律——發起結帳的那個瀏覽器分頁，確認按鈕在結構上就不存在。它只會出現在另一台裝置，或另一位旅伴的畫面上。",
@@ -1325,10 +1329,28 @@
             // 進房表單：房號留白＝也是隨機新房間，但不塞示範資料——
             // 這裡的預設情境是「單純想試用」而不是「要看範例」，規格沒明講，屬於判斷。
             document.getElementById("ldJoinBtn").onclick = () => {
+                const errorEl = document.getElementById("ldJoinError");
+                errorEl.hidden = true;
+
                 const raw = document.getElementById("ldJoinRoom").value.trim();
+                if (raw === "") {
+                    // 沒輸入：留白就開新房，跟原本行為一致。
+                    enterRoom("ldJoinName", randomRoomCode(), false);
+                    return;
+                }
+
                 // 房號統一小寫：DO 用字串定位房間，Tokyo 跟 tokyo 是兩個不同房間，
                 // 旅伴大小寫打不一樣就會各自落進空房，畫面上還看不出任何錯誤提示。
-                const room = (raw.replace(/[^\w-]/g, "").slice(0, 40).toLowerCase()) || randomRoomCode();
+                const room = raw.replace(/[^\w-]/g, "").slice(0, 40).toLowerCase();
+
+                // 有輸入，但清理後變空字串（例如純中日文房號）：不要導向隨機房間，
+                // 那樣兩位輸入同一個中文房號的旅伴會各自落進不同的空房，且畫面上看不出任何提示。
+                // 這裡不嘗試支援 CJK 房號（房間路徑正則本來就只認 \w-），改成明講原因。
+                if (room === "") {
+                    errorEl.hidden = false;
+                    return;
+                }
+
                 enterRoom("ldJoinName", room, false);
             };
 
