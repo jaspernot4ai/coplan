@@ -1326,7 +1326,9 @@
             // 這裡的預設情境是「單純想試用」而不是「要看範例」，規格沒明講，屬於判斷。
             document.getElementById("ldJoinBtn").onclick = () => {
                 const raw = document.getElementById("ldJoinRoom").value.trim();
-                const room = (raw.replace(/[^\w-]/g, "").slice(0, 40)) || randomRoomCode();
+                // 房號統一小寫：DO 用字串定位房間，Tokyo 跟 tokyo 是兩個不同房間，
+                // 旅伴大小寫打不一樣就會各自落進空房，畫面上還看不出任何錯誤提示。
+                const room = (raw.replace(/[^\w-]/g, "").slice(0, 40).toLowerCase()) || randomRoomCode();
                 enterRoom("ldJoinName", room, false);
             };
 
