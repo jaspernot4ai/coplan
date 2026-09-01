@@ -1089,3 +1089,451 @@ Playwright 這個 session 仍然連不上，這次改用比前幾個任務更進
 - **額外發現一個規格沒完全講到的漏洞，主動記錄進文件**：規格第 6 節說「偽造沒用，deviceId 相同仍被擋」——這句話只在「偽造者跟原請求是同一台裝置」時成立。如果有人用**自己真正不同的裝置**、在網址上打 `?as=Cindy` 冒充 Cindy，`deviceId` 檢查會通過（裝置真的不同）、身分檢查也會通過（`by` 欄位真的是 "Cindy"）——因為這個作品完全沒有帳號系統，沒有辦法分辨網址列上打「Cindy」的人是不是真的 Cindy。這跟規格提到的「Agent 開無痕視窗繞過」是不同的洞（那個是 Cindy 自己的 Agent 合法地用 Cindy 的身分開新裝置；這個是別人冒用 Cindy 的名字）。已經誠實寫進 `README.md` 與 `docs/SUBMISSION.md` 的已知限制段落，不是規格要求但判斷屬於「這個模型的上限」該一併寫清楚的範圍。
 - **`DEMO-SCRIPT.md` 的備案從「開 `?as=Bob` 由 Bob 確認」改成「開 `?as=Cindy` 模擬 Cindy 自己的第二台裝置」**：舊備案在新規則下錄影時會直接在鏡頭前失敗（Bob 現在一定被伺服器擋下），不只是「效果較差」，是「根本不會成功」，所以不只是更新用詞，是換了一個真的會成功的備案，並加了警語提醒不要照舊版備案錄。
 
+---
+
+## 任務 14（第二版）：付款授權綁到伺服器發的裝置憑證 ✅
+
+> 這一版取代上面「任務 14」的 `deviceId`／`localStorage` 設計。動機：規格明講「昨天的
+> deviceId 方案是錯的」——`localStorage` 一樣是能執行 JS 的 Agent 讀得到、改得到的地方，
+> 跟被實測破解的 `sessionId` 是同一類問題，只是換了個藏的地方。改成伺服器發 `HttpOnly`
+> cookie，前端 JavaScript 完全碰不到這個值。
+
+### 0. `src/index.js` 改動範圍確認
+
+規格鎖死的範圍是：Worker `fetch()`、DO 的 `fetch()`／`webSocketMessage()` 裡的
+`request_checkout` 與 `approve_checkout` 分支、以及新增三處授權檢查。完整 `git diff src/index.js`：
+
+```diff
+diff --git a/src/index.js b/src/index.js
+index 057f1e6..29e1a71 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -68,13 +68,20 @@ export class RoomDO {
+     });
+   }
+ 
+-  // 廣播格式集中在這裡，加欄位只要改一個地方
+-  state() {
++  // 廣播格式集中在這裡，加欄位只要改一個地方。
++  // forDeviceId：這個 payload 是要送給哪個連線的——每個連線的 deviceId 不同，
++  // 「這筆待確認是不是我自己那台裝置發起的」這件事本來就因人而異，沒辦法用同一份
++  // JSON 廣播給所有人。這裡只送出算好的布林值 sameDeviceAsMe，不送出原始 requestedByDevice，
++  // 避免把裝置 id 這種內部識別碼不必要地攤在所有連線的畫面上。
++  state(forDeviceId) {
+     return JSON.stringify({
+       items: this.items,
+       log: this.log,
+       members: this.members,
+-      pendingApprovals: this.pendingApprovals,
++      pendingApprovals: this.pendingApprovals.map(({ requestedByDevice, ...rest }) => ({
++        ...rest,
++        sameDeviceAsMe: requestedByDevice === forDeviceId,
++      })),
+     });
+   }
+ 
+@@ -94,8 +101,18 @@ export class RoomDO {
+   async fetch(request) {
+     const pair = new WebSocketPair();
+     const [client, server] = Object.values(pair);
++
++    // 裝置身分只信任 Worker 轉發過來的這個 header（見檔案最下面的 Worker fetch()），
++    // 完全不看訊息內容——webSocketMessage 之後只會從這個連線的 attachment 讀 deviceId，
++    // 不會再看 msg.deviceId／msg.sessionId，那兩個欄位是攻擊者可以任意填寫的。
++    // 用 serializeAttachment 而不是一個 Map<ws, deviceId>：這個 DO 用的是 Hibernatable
++    // WebSockets API（acceptWebSocket），閒置時整個物件可能被回收、記憶體裡的 Map 會消失，
++    // 只有 serializeAttachment 存的東西保證在下次喚醒時還在同一個連線上讀得到。
++    const deviceId = request.headers.get("X-Coplan-Device") || crypto.randomUUID();
++    server.serializeAttachment({ deviceId });
++
+     this.ctx.acceptWebSocket(server);
+-    server.send(this.state());
++    server.send(this.state(deviceId));
+     return new Response(null, { status: 101, webSocket: client });
+   }
+ 
+@@ -112,7 +129,18 @@ export class RoomDO {
+ 
+     const msg = JSON.parse(message);
+ 
++    // 這個連線的裝置身分（來自 fetch() 時存的 attachment），以及它目前宣稱的名字
++    // （由 join 訊息設定）。set_budget／reset_room 用 name 判斷「這個連線有沒有以
++    // 這個身分加入過」；approve_checkout 用 deviceId 判斷「是不是同一台裝置」。
++    const attachment = ws.deserializeAttachment() || {};
++    const deviceId = attachment.deviceId;
++
+     if (msg.t === "join") {
++      // 記住這個連線宣稱的名字，讓之後的 set_budget／reset_room 可以比對「這個連線
++      // 有沒有以這個身分加入過」——不是身分驗證（名字本來就可以隨便宣稱），
++      // 只是擋掉「完全沒加入過就能操作」這種最低成本的濫用。
++      ws.serializeAttachment({ ...attachment, name: msg.name });
++
+       const isNew = !this.members[msg.name];
+       this.members[msg.name] = { name: msg.name, lastSeen: Date.now() };
+       if (isNew) {
+@@ -180,8 +208,18 @@ export class RoomDO {
+     }
+ 
+     // 設定個人預算上限。預算屬於「人」而不是「行程」，所以存在 members 上。
++    // 補上零授權缺口：這個連線必須先以 msg.by 這個名字 join 過，才能設定這個名字的預算——
++    // 沒有帳號系統，這不是真正的身分驗證（誰都能自己 join 成任何名字），
++    // 但至少擋掉「完全沒宣稱過某個身分、單靠一則訊息就能改別人預算」這種零成本濫用。
+     if (msg.t === "set_budget") {
+-      if (this.members[msg.by]) {
++      if (attachment.name !== msg.by) {
++        this.addLog({
++          who: msg.by,
++          viaAgent: msg.viaAgent,
++          action: "budget_blocked",
++          summary: `Blocked: this connection hasn't joined as ${msg.by}, so it can't set their budget.`,
++        });
++      } else if (this.members[msg.by]) {
+         this.members[msg.by].budget = Number(msg.budget) || 0;
+         this.addLog({
+           who: msg.by,
+@@ -196,9 +234,12 @@ export class RoomDO {
+     // 這是整個作品的核心主張 —— 花錢那一步在結構上就不開放給 Agent，
+     // 不是靠 prompt 拜託它自律，而是這條路徑根本沒有完成交易的能力。
+     if (msg.t === "request_checkout") {
+-      const sessionAlreadyPending = this.pendingApprovals.some(p => p.requestedBySession === msg.sessionId);
++      // 用連線的 deviceId 判斷「這台裝置」有沒有待確認請求，不再看 msg.sessionId——
++      // 理由跟 approve_checkout 一樣：sessionId 是前端訊息裡的欄位，攻擊者填得出來，
++      // deviceId 來自 fetch() 時的連線層級 attachment，訊息內容改不了它。
++      const deviceAlreadyPending = this.pendingApprovals.some(p => p.requestedByDevice === deviceId);
+ 
+-      if (sessionAlreadyPending) {
++      if (deviceAlreadyPending) {
+         this.addLog({
+           who: msg.by,
+           viaAgent: msg.viaAgent,
+@@ -222,8 +263,7 @@ export class RoomDO {
+         this.pendingApprovals.push({
+           id: crypto.randomUUID(),
+           requestedBy: msg.by,
+-          requestedBySession: msg.sessionId,
+-          requestedByDevice: msg.deviceId,
++          requestedByDevice: deviceId,
+           viaAgent: !!msg.viaAgent,
+           itemIds: mine.map(a => a.id),
+           total,
+@@ -247,12 +287,15 @@ export class RoomDO {
+       if (idx >= 0) {
+         const approval = this.pendingApprovals[idx];
+ 
+-        // 放行必須同時滿足兩條：確認者不是同一台裝置、且確認者就是本人。
+-        // sessionId 的檢查繼續保留（同分頁重送訊息這種最直接的情況交給它擋），
+-        // deviceId 額外擋掉「同瀏覽器開新分頁」——實測發現 sessionId 單獨擋不住這個洞：
+-        // sessionId 每次頁面載入都重新產生、不存 localStorage，新分頁就是新 session，舊版檢查會放行。
+-        const sameDevice = msg.sessionId === approval.requestedBySession || msg.deviceId === approval.requestedByDevice;
+-        const notTheRequester = msg.by !== approval.requestedBy;
++        // 放行只認一條，而且完全不看訊息內容：確認者的連線 deviceId（來自伺服器發的
++        // HttpOnly cookie，webSocketMessage 開頭已經從 attachment 讀出）不能等於發起請求
++        // 那個連線的 deviceId。不再檢查「確認者是不是本人」（msg.by === approval.requestedBy）——
++        // msg.by 是前端訊息裡的欄位，任何連線都填得出任何名字，拿一個攻擊者自己填的欄位
++        // 當作權限依據，只會給人一種「有身分檢查」的假象，卻擋不住真正想繞過的人。
++        // 「必須是本人」這件事改成只在 UI 表達（見 public/index.html 的 renderApprovals：
++        // 只有 me() === requestedBy 且不同裝置才會畫出確認按鈕），伺服器唯一守住的、
++        // 也是唯一守得住的邊界，是裝置。這個取捨記在 docs/TASKS.md 任務 14 與 README。
++        const sameDevice = deviceId === approval.requestedByDevice;
+ 
+         if (sameDevice) {
+           this.addLog({
+@@ -261,13 +304,6 @@ export class RoomDO {
+             action: "approve_blocked",
+             summary: "Approval blocked: this is the same device that requested checkout. Approve from a different device.",
+           });
+-        } else if (notTheRequester) {
+-          this.addLog({
+-            who: msg.by,
+-            viaAgent: false,
+-            action: "approve_blocked",
+-            summary: `Approval blocked: only ${approval.requestedBy} can approve this payment.`,
+-          });
+         } else {
+           for (const a of this.items) {
+             if (approval.itemIds.includes(a.id)) a.paid = true;
+@@ -285,19 +321,32 @@ export class RoomDO {
+ 
+     // 錄影與評審試玩用的重置。一次清空，避免逐筆刪除在時間軸留下數十筆雜訊。
+     // members 保留，這樣重置後成員顏色與名單不變，錄影可以直接接著開始。
++    // 補上零授權缺口：重置是全房間、不可逆的破壞性操作，改版前任何連線送一則訊息
++    // 就能清空所有人的資料。現在跟 set_budget 用同一套最低限度的判斷——這個連線
++    // 必須先以 msg.by 這個名字 join 過。擋不住「本來就在房間裡的人」惡意重置
++    // （沒有帳號系統做不到這件事），但至少擋掉連 join 都沒做的最低成本濫用。
+     if (msg.t === "reset_room") {
+-      this.items = [];
+-      this.log = [];
+-      this.pendingApprovals = [];
+-      this.addLog({
+-        who: msg.by,
+-        viaAgent: false,
+-        action: "reset_room",
+-        summary: "Room reset — itinerary, timeline and pending approvals cleared",
+-      });
+-      await this.save();
+-      this.broadcast();
+-      return;
++      if (attachment.name !== msg.by) {
++        this.addLog({
++          who: msg.by,
++          viaAgent: false,
++          action: "reset_blocked",
++          summary: `Blocked: this connection hasn't joined as ${msg.by}, so it can't reset the room.`,
++        });
++      } else {
++        this.items = [];
++        this.log = [];
++        this.pendingApprovals = [];
++        this.addLog({
++          who: msg.by,
++          viaAgent: false,
++          action: "reset_room",
++          summary: "Room reset — itinerary, timeline and pending approvals cleared",
++        });
++        await this.save();
++        this.broadcast();
++        return;
++      }
+     }
+ 
+     // 人也可以直接否決 Agent 的請求
+@@ -320,10 +369,13 @@ export class RoomDO {
+     this.broadcast();
+   }
+ 
++  // 每個連線的 sameDeviceAsMe 不一樣，沒辦法像以前那樣算一份 JSON 廣播給所有人——
++  // 這是被裝置綁定機制逼出來的必要延伸，不是額外加的功能。連線數在這個作品的規模下
++  // 頂多幾個人，逐一算一次 state() 的成本可以忽略。
+   broadcast() {
+-    const payload = this.state();
+     for (const socket of this.ctx.getWebSockets()) {
+-      socket.send(payload);
++      const attachment = socket.deserializeAttachment() || {};
++      socket.send(this.state(attachment.deviceId));
+     }
+   }
+ 
+@@ -336,17 +388,63 @@ export class RoomDO {
+   }
+ }
+ 
++// 只解析我們自己要用的那一個 cookie，不需要一整個 cookie-parsing 套件。
++function readDeviceCookie(request) {
++  const header = request.headers.get("Cookie") || "";
++  for (const part of header.split(";")) {
++    const eq = part.indexOf("=");
++    if (eq === -1) continue;
++    if (part.slice(0, eq).trim() === "coplan_device") {
++      return decodeURIComponent(part.slice(eq + 1).trim());
++    }
++  }
++  return null;
++}
++
+ // ② Worker：看網址決定把請求轉給哪個房間
+ export default {
+   async fetch(request, env) {
+     const url = new URL(request.url);
++
++    // 發裝置憑證。前端在建立 WebSocket 之前一定會先呼叫這支、並 await 它完成，
++    // 讓瀏覽器有機會先把 Set-Cookie 存好。這支端點本身不回傳 deviceId 給 JS——
++    // HttpOnly 讀不到本來就是整個機制的重點，能執行 JS 的 Agent 不該摸得到這個值，
++    // 這是它跟舊版存在 localStorage 的 deviceId 的根本差異。
++    if (url.pathname === "/api/device") {
++      if (readDeviceCookie(request)) {
++        return new Response(JSON.stringify({ ok: true }), {
++          headers: { "Content-Type": "application/json" },
++        });
++      }
++      const deviceId = crypto.randomUUID();
++      // Secure 只在真的是 https 時才加——本機 wrangler dev 是 http，瀏覽器會直接
++      // 拒存帶 Secure 的 cookie（且 127.0.0.1 不像 localhost 那樣有例外），
++      // 硬加只會讓本機測試連 cookie 都存不進去，而 http 底下 Secure 也不提供任何保護。
++      const secure = url.protocol === "https:" ? "; Secure" : "";
++      return new Response(JSON.stringify({ ok: true }), {
++        headers: {
++          "Content-Type": "application/json",
++          "Set-Cookie": `coplan_device=${deviceId}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000${secure}`,
++        },
++      });
++    }
++
+     const match = url.pathname.match(/^\/api\/room\/([\w-]+)$/);
+ 
+     if (match) {
+       const roomName = match[1];
+       const id = env.ROOM.idFromName(roomName);
+       const room = env.ROOM.get(id);
+-      return room.fetch(request);
++
++      // 裝置身分只信任這裡解析出來的 cookie，不信任 client 送來的任何欄位。
++      // 用一個新 Headers 物件、明確 set() 覆蓋這個 header 再轉發——就算原始請求
++      // 自己塞了一個同名的 X-Coplan-Device header 想冒充別的裝置，也會被這裡蓋掉，
++      // 因為 DO 那邊只認這個 header，不會回頭看訊息內容。
++      const deviceId = readDeviceCookie(request) || crypto.randomUUID();
++      const headers = new Headers(request.headers);
++      headers.set("X-Coplan-Device", deviceId);
++      const forwarded = new Request(request, { headers });
++      return room.fetch(forwarded);
+     }
+ 
+     return new Response("Not found", { status: 404 });
+```
+
+`node --input-type=module --check < src/index.js` 通過。
+
+**範圍note（誠實記下一個延伸）**：規格明講只准動 `webSocketMessage()` 裡的 `request_checkout`／
+`approve_checkout` 分支與三處新授權檢查，但 `state()` 與 `broadcast()` 也動了。理由是被
+(b)(c)(d) 逼出來的必要延伸，不是我自己想加的範圍：前端要畫「這是不是我的裝置」這顆
+UI 判斷，但裝置身分現在是 `HttpOnly` cookie、前端完全讀不到，如果 `state()` 繼續對所有連線
+廣播同一份 JSON，就沒有任何方法讓前端知道「這筆待確認是不是我自己那台裝置發起的」。
+唯一解法是讓 `state()` 依接收者的 `deviceId` 算出一個 `sameDeviceAsMe` 布林值、`broadcast()`
+逐一送出各自的版本，不能再共用一份 payload。`join`／`add`／`update`／`remove`／`reject_checkout`
+與衝突偵測、儲存格式（`ctx.storage` 存的內容不變，只有廣播出去的 JSON 形狀變了）都沒有動。
+
+### 改了哪些檔案
+
+```
+README.md                      |  20 +++---
+docs/DEMO-SCRIPT.md            |  38 +++++++----
+docs/REVIEW-WEBMCP-SECURITY.md |  28 ++++++++
+docs/SUBMISSION.md             | 125 +++++++++++++++++++++++++---------
+public/index.html              | 150 ++++++++++++++++++++++-------------------
+src/index.js                   | 172 +++++++++++++++++++++++++++++++---------
+6 files changed, 372 insertions(+), 161 deletions(-)
+```
+
+### 不可破壞清單逐條確認
+
+- **`src/index.js` 只動規格點名的分支＋三處新授權檢查，加上上面誠實記下的 `state()`／`broadcast()` 延伸**：`add`／`update`／`remove`／`join`／`reject_checkout`、`detectConflicts`、`save()`、`ctx.storage` 的儲存格式全部一行沒動。
+- **`msg.sessionId`／`msg.deviceId` 在伺服器端完全沒有作用了**：`webSocketMessage` 只在最上面讀一次 `ws.deserializeAttachment()`，之後所有分支只看這個連線層級的 `deviceId`／`name`，不再讀訊息內容裡的任何身分欄位。前端也對應拿掉這兩個變數（見下方）。
+- **`SUMMARY_RULES` 與 `src/index.js` 的 summary 樣板數量重新對齊**：拿掉舊的「Approval blocked: only X can approve」規則（伺服器不再產生這個訊息），新增 `budget_blocked`／`reset_blocked` 兩條中英對照。改動後兩邊都用腳本實際數過：`src/index.js` 15 個相異樣板字串，`SUMMARY_RULES` 15 條，逐一對應。
+
+### 我自己驗證過的項目，以及驗證方法
+
+Playwright 這個 session 仍然連不上。這次的機制核心是 `HttpOnly` cookie，前一版慣用的「Node
+原生 `WebSocket` 直連」手法在這裡不夠用——原生 `WebSocket`（瀏覽器規格）建構子不支援自訂
+`headers`，沒辦法手動送 `Cookie` header，沒辦法真正測到「同一個 cookie 值跨連線」這個機制
+的核心。改用 `npm install ws`（裝在 scratch 目錄 `$CLAUDE_JOB_DIR/tmp/jsdom_check`，同樣沒有
+碰專案的 `package.json`），`ws` 套件的 client 明確支援自訂 headers，可以在連線時手動指定
+`Cookie: coplan_device=<任意值>`，藉此完全控制、精準測試 Worker 解析 cookie／轉發 header／
+DO 用 `serializeAttachment` 記住裝置這一整條路徑。
+
+**A. WebSocket 層直接測試（繞過 UI，第 5 節要求的核心）**——`ws_task14_v2.js`，11 項全過：
+
+1. **同一個 cookie 值、兩條不同連線**（模擬同瀏覽器開新分頁）：`conn1` 用 cookie `deviceA`
+   發起 `request_checkout`，`conn2` 用同一個 cookie `deviceA` 送 `approve_checkout`——
+   `pendingApprovals` 維持 1 筆、時間軸最新一筆是 `action: "approve_blocked"`，`summary`
+   逐字等於 `"Approval blocked: this is the same device that requested checkout. Approve from a different device."`。
+2. **不同 cookie 值、不同名字**（`conn1` 以 Alice 發起，`conn2` 用不同 cookie 以 Bob 確認）：
+   **確認成功**，行程正確變 `paid: true`，`pendingApprovals` 清空。這不是漏測到的 bug，
+   是規格第 3 節明講的設計取捨——伺服器現在只驗裝置、不驗身分，這一項測試就是刻意
+   驗證「伺服器真的不擋身分」這個事實本身，不是要它擋下。
+3. **完全不帶任何 cookie 的兩條連線**：各自被 Worker 隨機指派一個新 `deviceId`，approve
+   直接放行——驗證規格第 6 節明講要記下來的退化情境（非瀏覽器、或封鎖所有 cookie 時）確實
+   存在，且沒有被隱藏。
+4. **`set_budget` 零授權缺口**：完全沒 `join` 就設定 Alice 的預算，被擋（`budget_blocked`）；
+   `join` 成 Bob 後嘗試設定 Alice 的預算，仍被擋（跨人）；設定自己（Bob）的預算，成功。
+5. **`reset_room` 零授權缺口**：先加入一筆測試項目；用一個沒 `join` 過的名字（`Mallory`）
+   嘗試 `reset_room`，被擋（`reset_blocked`），項目還在；改用自己已 `join` 的名字（`Alice`）
+   重置，成功清空。
+6. **Regression**：一般 CRUD＋衝突偵測仍正常運作。
+
+**B. 反偽造 header 測試（規格 (b)(c) 明講的攻擊面）**——`ws_task14_spoof.js`：`conn2` 帶著跟
+`conn1` 完全相同的 cookie（真的是同一台裝置），但額外塞一個偽造的
+`X-Coplan-Device: SPOOFED-FAKE-DEVICE-ID` header，企圖讓伺服器誤判成不同裝置。結果
+approve 仍然被擋——證實 Worker 端 `headers.set()` 真的覆蓋掉了 client 自己塞的同名 header，
+DO 端讀到的還是 Worker 從 cookie 解析出來的真實值，不是攻擊者能控制的值。
+
+**C. 端對端真實渲染測試（三種畫面狀態 × 兩種語言 + 訊息格式）**——`check_task14v2_render.js`：
+用 jsdom 執行真正的房間頁 `<script>`，`window.fetch` 用一個記錄呼叫紀錄的假函式攔截（先確認
+`/api/device` 真的有在建立 WebSocket 前被呼叫），`window.WebSocket` 用一個可以手動 `emit()`
+狀態的假類別——裝置綁定本身已經在 A／B 用真實協定測過，這裡只驗證前端拿到伺服器送來的
+`sameDeviceAsMe` 之後畫面對不對。12 項全過：
+- `/api/device` 確實在建立 WebSocket 前被呼叫。
+- 狀態 1（`sameDeviceAsMe: true`）：沒有確認按鈕，只有取消按鈕。
+- 狀態 2（`sameDeviceAsMe: false` 且是本人）：有「Approve payment」按鈕；點下去送出的
+  `approve_checkout` 訊息裡確認沒有 `sessionId`／`deviceId` 這兩個欄位。
+- 狀態 3（`sameDeviceAsMe: false` 且不是本人）：只有一顆按鈕（Decline），沒有確認按鈕，
+  提示文字正確顯示對方姓名。
+- `request_checkout` 送出的訊息同樣確認沒有 `sessionId`／`deviceId`。
+- 切成中文後，`lockLine`／`notTheRequester` 正確翻譯（沒有退回英文原文，`notTheRequester`
+  正確代入姓名）。
+
+**D. 房間頁其餘功能無回歸**——沿用既有的 `check_task14_regression.js`（jsdom + 原生
+WebSocket 連真伺服器）：新增兩筆時間重疊行程，`#gridBody` 正確出現 2 個 `.block.conflict`；
+刪除一筆後衝突正確清成 0；`setBudget(5000)` 後 `#budgetStatus` 正確顯示 `NT$5,000`；
+`setInterval` 呼叫次數為 1，WebMCP 偵測輪詢仍在房間模式下正確啟動。
+
+**E. JS 語法**：`public/index.html` 抽出的 `<script>` 跑 `node --check` 通過；`src/index.js`
+用 `node --input-type=module --check` 通過。
+
+**F. `/api/device` 端點行為**：`curl -i` 直接打——沒帶 cookie 時回 `Set-Cookie:
+coplan_device=<uuid>; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`（本機 http，正確
+沒有 `Secure`）；帶著剛拿到的 cookie 再打一次，正確不再回傳 `Set-Cookie`（不會每次都換新值）。
+
+**G. Console 錯誤**：以上所有測試全程用 `window.addEventListener("error", ...)` 監聽，
+沒有捕捉到任何錯誤。
+
+### 驗證中發現並修正的問題
+
+- 這次沒有在驗證過程中發現需要修正的程式碼問題——上一版任務 14 已經把 selector-scope 之類
+  的測試腳本 bug 修過，這次的測試腳本是重新寫的，過程中沒有再踩到類似的坑。
+- 唯一算得上「發現」的是方法論本身：一開始沿用上一版的「Node 原生 `WebSocket` 直連」手法，
+  寫到一半才意識到原生 `WebSocket` 不支援自訂 `headers`、測不到 cookie，於是改用 `ws` 套件
+  重寫。這不是產品程式碼的問題，是測試方法本身要跟著機制改變而調整，記在這裡說明過程。
+
+### 判斷是誤報、未修改的項目
+
+- 無。這次驗證沒有出現「一開始以為壞了、後來確認是測試腳本問題」的情況。
+
+### 需要你自己確認的項目（我這邊無法驗證）
+
+- 開了 WebMCP flag 的 Chrome、ChatGPT 桌面版：`request_checkout` 的 `description`／
+  `execute()` 回傳字串這次又小幅調整過措辭（拿掉「a fellow traveler cannot approve」這句，
+  因為現在這句已經不是伺服器保證的事實），需要你實機確認 Agent 讀到新描述後的行為。
+- 正式站的 `Secure` cookie 屬性：程式邏輯是 `url.protocol === "https:"` 才加 `Secure`，本機
+  `http://127.0.0.1:8787` 已經 curl 驗證過正確沒有加；正式站是 `https://`，理論上會正確加上，
+  但這一項我還沒有實際部署後用 `curl -i https://coplan.coplan-lab.workers.dev/api/device`
+  親自確認過（部署後會補測，見下方「部署後的正式站確認」）。
+- 375／768／1280 視覺檢查、Chrome／ChatGPT 實機測試——狀態不變，仍待你或規劃端確認。
+
+### 規格未明講、我自己判斷的地方
+
+- **`state()`／`broadcast()` 的延伸範圍**：已在「0. 改動範圍確認」段落最後說明，這裡不重複。
+- **`lockLine` 這次改了字，跟上一版的「規格明講凍結」不是同一個情境**：上一版任務 14 的
+  規格明講要求這段文字逐字不變（即使已經不準確）。這一版的規格沒有再提這個限制，而且
+  規格第 3 節本身就是這次要改的核心（「本人」只在 UI 表達），舊文案的「or ask a fellow
+  traveler to approve」跟新設計的 UI 語意直接衝突（UI 上旅伴根本沒有入口可以確認），
+  所以判斷這次應該一併修正，拿掉這句，改成只講「開啟這個房間」，不再提旅伴。這跟上一次
+  刻意保留舊文案的判斷不衝突——是因為凍結指令這次沒有再出現，而且維持舊文案這次會讓
+  UI 文案本身自相矛盾（不像上一版，舊文案只是「不夠精確」，沒有直接矛盾）。
+- **伺服器完全不查身分，是規格第 3 節明講的設計，但「哪些地方要照這個精神連帶調整」要自己
+  判斷**：除了 `src/index.js` 拿掉 `notTheRequester` 檢查（規格明講），我也主動核對並修正了
+  以下原本隱含「伺服器會擋非本人」這個已經不成立的假設的文字：`public/index.html` 的
+  `renderApprovals()` 上方註解、`request_checkout` 工具描述與回傳字串、`lockLine` 文案、
+  `docs/REVIEW-WEBMCP-SECURITY.md` 的「✅ 付款這一條沒有越權」（規格第 6 節明講要標記）、
+  `README.md`／`docs/SUBMISSION.md` 的已知限制段落、`docs/DEMO-SCRIPT.md` 的旁白與備案說明。
+  這些都不是規格逐條點名要改的檔案／字串，但都是「如果不改，讀者會相信一個已經不成立的
+  安全保證」的地方，判斷後認為都在「不要為了好看而藏起真相」這個任務精神的範圍內，主動改了。
+- **`set_budget`／`reset_room` 的授權判斷用「這個連線是否以該名字 join 過」，不是規格文字
+  裡建議的另一個選項「比對連線 deviceId 對應的成員」**：規格原話是「比對連線 deviceId
+  對應的成員，或至少擋掉跨人設定」，給了兩個選項。判斷後選了後者（用連線宣稱的 `name`，
+  而不是用 `deviceId` 反查「這個裝置對應哪個成員」）：因為一台裝置本來就可能合理地在不同
+  時間以不同名字使用同一個房間（例如同一支手機借給不同旅伴輪流看行程），用 `deviceId`
+  綁定「這個裝置只能是某個人」會誤傷這個合理情境；而且 `deviceId` 綁人本身仍然只是
+  「連線宣稱過什麼」的另一種形式，並不會比對 `name` 更接近真正的身分驗證。所以選擇語意
+  更直接、副作用更小的「這個連線有沒有以這個名字 join 過」，並在 `src/index.js` 的註解與
+  `docs/REVIEW-WEBMCP-SECURITY.md` 的補充裡都寫清楚這只是「擋掉零成本濫用」，不是身分驗證。
+- **`reset_room` 的授權沒有做得比 `set_budget` 更嚴格**：規格明講這條「做法你判斷,但要有
+  依據」。判斷後用了跟 `set_budget` 完全同一套邏輯，而不是額外要求「距離上次 reset 要隔多久」
+  之類的節流限制——理由是這個作品本來就沒有帳號系統，任何更嚴格的限制（例如只允許房間
+  建立者重置）都需要一個「房間建立者」的概念，這個概念目前不存在，硬加會是超出這次任務
+  範圍的架構改動。目前的修法擋掉的是「完全沒有 join 過、單靠一則訊息就能清空全房間資料」
+  這個最低成本的濫用，擋不住「本來就在房間裡的人」惡意重置，這個上限已經寫進
+  `src/index.js` 的註解與 `README.md`。
+
+### 部署後的正式站確認
+
+（部署與正式站驗證結果見下方附加段落——先完成 commit／push／deploy 後補上。）
+

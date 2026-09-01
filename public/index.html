@@ -532,7 +532,7 @@
             requesterName: (name) => name, requesterAgent: (name) => `${name}'s Agent`,
             requestedCheckout: "requested checkout of",
             itemCount: (n) => `${n} ${n === 1 ? "item" : "items"}`,
-            lockLine: "🔒 For your protection, <b>the device that requested this payment cannot approve it</b>.<br>\n                        Open this room on your phone or another device, or ask a fellow traveler to approve:<br>",
+            lockLine: "🔒 For your protection, <b>the device that requested this payment cannot approve it</b>.<br>\n                        Open this room on your own phone or another device to approve it:<br>",
             cancelRequest: "Cancel this request",
             fromAnotherDevice: "This request came from another device. You can approve it here.",
             notTheRequester: (name) => `Only ${name} can approve this payment, from ${name}'s own other device.`,
@@ -589,7 +589,7 @@
             requesterName: (name) => name, requesterAgent: (name) => `${name} 的 Agent`,
             requestedCheckout: "要求結帳",
             itemCount: (n) => `${n} 筆`,
-            lockLine: "🔒 為了保護你，<b>發出這筆付款請求的裝置不能自己確認</b>。<br>\n                        請用手機或另一台裝置開啟這個房間，或請同行旅伴確認：<br>",
+            lockLine: "🔒 為了保護你，<b>發出這筆付款請求的裝置不能自己確認</b>。<br>\n                        請用自己的手機或另一台裝置開啟這個房間確認：<br>",
             cancelRequest: "取消這筆請求",
             fromAnotherDevice: "這筆請求來自另一台裝置，你可以在這裡確認。",
             notTheRequester: (name) => `只有 ${name} 本人能確認這筆付款，且必須在 ${name} 自己的另一台裝置上操作。`,
@@ -642,12 +642,13 @@
           [/^Updated "(.*)" to Day (\d+) (.+)$/, (m) => `已將「${m[1]}」改到第 ${m[2]} 天 ${m[3]}`],
           [/^Removed "(.*)"$/, (m) => `已刪除「${m[1]}」`],
           [/^Set budget limit to NT\$(.+)$/, (m) => `已將預算上限設為 NT$${m[1]}`],
+          [/^Blocked: this connection hasn't joined as (.+), so it can't set their budget\.$/, (m) => `已擋下：這個連線還沒有以「${m[1]}」的身分加入，不能設定這個人的預算。`],
           [/^This device already has a pending checkout request — approve or cancel it before requesting another$/, () => "這台裝置已經有一筆待確認的結帳請求，請先確認或取消再送出新的"],
           [/^Too many pending checkout requests in this room right now — try again once one is resolved$/, () => "這個房間目前待確認的結帳請求太多，等其中一筆處理完再試"],
           [/^Requested checkout of NT\$(.+) \((\d+) items?\), pending approval$/, (m) => `要求結帳 NT$${m[1]}（${m[2]} 筆），等待確認`],
           [/^Approval blocked: this is the same device that requested checkout\. Approve from a different device\.$/, () => "確認被擋下：這是發出結帳請求的同一台裝置，請換一台裝置確認。"],
-          [/^Approval blocked: only (.+) can approve this payment\.$/, (m) => `確認被擋下：只有 ${m[1]} 本人能確認這筆付款。`],
           [/^Approved payment of NT\$(.+) \(demo mode, no real payment processor connected\)$/, (m) => `已確認付款 NT$${m[1]}（demo 模式，未接真實金流）`],
+          [/^Blocked: this connection hasn't joined as (.+), so it can't reset the room\.$/, (m) => `已擋下：這個連線還沒有以「${m[1]}」的身分加入，不能重置房間。`],
           [/^Room reset — itinerary, timeline and pending approvals cleared$/, () => "房間已重置，行程、時間軸與待確認請求都已清空"],
           [/^Declined the checkout request for NT\$(.+)$/, (m) => `已拒絕 NT$${m[1]} 的結帳請求`],
         ];
@@ -702,27 +703,12 @@
         const roomId = path ? path[1] : "lobby";
         const myName = (new URLSearchParams(location.search).get("as") || "").slice(0, 20).trim() || "Anonymous Traveler";
 
-        // 這個瀏覽器分頁的身分。每次載入重新產生，不存 localStorage——
-        // 用來擋「同一個分頁重送訊息」這種最直接的情況。
-        const sessionId = crypto.randomUUID();
-
-        // 這個瀏覽器 profile 的身分（不是分頁）。任務 14 之前這裡的舊註解寫「存 localStorage
-        // 保護就失效」，推論是反的：sessionId 不存，才會讓同一個瀏覽器每開一個新分頁都拿到
-        // 新 id，反而讓 ChatGPT 桌面版可以照樣被要求「開新分頁按確認」而繞過保護（已實測確認）。
-        // deviceId 就是為了擋這個洞而存在——存起來，同一個瀏覽器 profile 的所有分頁才會共用
-        // 同一把 id，新分頁也騙不過去。存取失敗（例如無痕模式部分限制、使用者關閉儲存權限）
-        // 就退回每次載入隨機——這會讓這個瀏覽器分頁的行為退回舊版「新分頁就能繞過」的弱保護，
-        // 不是無關緊要的邊角案例，見 docs/TASKS.md 任務 14 回報。
-        let deviceId;
-        try {
-          deviceId = localStorage.getItem("coplan-device");
-          if (!deviceId) {
-            deviceId = crypto.randomUUID();
-            localStorage.setItem("coplan-device", deviceId);
-          }
-        } catch (e) {
-          deviceId = crypto.randomUUID();
-        }
+        // 裝置身分改由伺服器發、存在 HttpOnly cookie（見 src/index.js 的 /api/device）。
+        // 這裡刻意不再宣告任何 sessionId／deviceId 變數——上一版把 deviceId 存在
+        // localStorage，實測發現這樣防不了能執行 JS 的 Agent（它讀得到、改得到 localStorage）。
+        // HttpOnly cookie 是唯一 JS 摸不到的地方，所以現在前端完全不知道自己的 deviceId 是什麼，
+        // 只知道伺服器透過每筆 pendingApproval 上的 sameDeviceAsMe 告訴我們「這是不是我的裝置」
+        // （見下面 renderApprovals()）。見 docs/TASKS.md 任務 14。
 
         const status = document.getElementById("status");
         const gridBody = document.getElementById("gridBody");
@@ -747,33 +733,44 @@
         if (isRoomMode) {
             document.getElementById("roomIdLabel").textContent = t("roomLabel", roomId);
 
-            const proto = location.protocol === "https:" ? "wss" : "ws";
-            ws = new WebSocket(`${proto}://${location.host}/api/room/${roomId}`);
+            // 連 WebSocket 之前一定先呼叫 /api/device、並 await 它完成——這支呼叫
+            // 不會回傳任何裝置 id 給我們（HttpOnly 讀不到本來就是重點），純粹是為了
+            // 讓瀏覽器有機會在真正連線前先把伺服器發的 cookie 存好，這樣 WebSocket
+            // 交握時瀏覽器才會自動帶上它。拿不到也不擋連線——伺服器那邊沒有 cookie
+            // 時會退回每連線隨機的弱保護，這個退化行為記在 docs 裡，不是隱藏起來的邊角案例。
+            (async () => {
+                try {
+                    await fetch("/api/device", { credentials: "same-origin" });
+                } catch (e) {}
 
-            ws.onopen = () => {
-                connState = "open";
-                renderStatus();
-                ws.send(JSON.stringify({ t: "join", name: me() }));
-                };
-            ws.onclose = () => {
-                connState = "closed";
-                renderStatus();
-                };
-            ws.onmessage = (event) => {
-                const state = JSON.parse(event.data);
-                items = state.items;
-                log = state.log;
-                members = state.members || {};
-                approvals = state.pendingApprovals || [];
-                maybeReset(items, approvals);
-                maybeSeedDemo(items);
-                render();
-                renderLog();
-                renderMembers();
-                renderBudget();
-                renderApprovals();
-                renderEditCard();
-                };
+                const proto = location.protocol === "https:" ? "wss" : "ws";
+                ws = new WebSocket(`${proto}://${location.host}/api/room/${roomId}`);
+
+                ws.onopen = () => {
+                    connState = "open";
+                    renderStatus();
+                    ws.send(JSON.stringify({ t: "join", name: me() }));
+                    };
+                ws.onclose = () => {
+                    connState = "closed";
+                    renderStatus();
+                    };
+                ws.onmessage = (event) => {
+                    const state = JSON.parse(event.data);
+                    items = state.items;
+                    log = state.log;
+                    members = state.members || {};
+                    approvals = state.pendingApprovals || [];
+                    maybeReset(items, approvals);
+                    maybeSeedDemo(items);
+                    render();
+                    renderLog();
+                    renderMembers();
+                    renderBudget();
+                    renderApprovals();
+                    renderEditCard();
+                    };
+            })();
         }
 
         // 使用者與 Agent 可以控制的字串（名字、標題、稽核摘要）一律轉義後才進 innerHTML。
@@ -811,17 +808,19 @@
         }
 
         // 結帳請求：只建立待確認請求，永遠不會完成付款。
-        // 帶上 sessionId 與 deviceId，讓伺服器知道是哪個分頁、哪台裝置發起的——
-        // 兩者都不得用來自行確認（見 src/index.js 的 approve_checkout）。
+        // 不再帶 sessionId／deviceId——伺服器從這條連線本身（HttpOnly cookie 轉來的
+        // X-Coplan-Device header）就知道是哪台裝置發起的，訊息內容裡的欄位不再有任何作用。
         function requestCheckout(viaAgent) {
-          ws.send(JSON.stringify({ t: "request_checkout", by: me(), viaAgent, sessionId, deviceId }));
-          return `Checkout request sent — it needs to be approved by ${me()} from a different device.`;
+          ws.send(JSON.stringify({ t: "request_checkout", by: me(), viaAgent }));
+          return `Checkout request sent — it needs to be approved from a different device.`;
         }
 
-        // 確認付款。伺服器會擋掉「同一台裝置」與「不是本人」這兩種情況，
-        // 前端也不會在這兩種情況下渲染確認按鈕（雙重保險）。
+        // 確認付款。伺服器只擋「同一台裝置」這一種情況（見 src/index.js 的
+        // approve_checkout：只認連線的 deviceId，不再檢查是不是本人——這個取捨的理由
+        // 寫在 src/index.js 的註解與 docs/TASKS.md）。前端只在「不同裝置且是本人」時
+        // 才畫出這顆按鈕，是使用者體驗上的引導，不是安全邊界本身。
         function approveCheckout(id) {
-          ws.send(JSON.stringify({ t: "approve_checkout", id, by: me(), sessionId, deviceId, viaAgent: false }));
+          ws.send(JSON.stringify({ t: "approve_checkout", id, by: me(), viaAgent: false }));
         }
         function rejectCheckout(id) {
           ws.send(JSON.stringify({ t: "reject_checkout", id, by: me() }));
@@ -1241,15 +1240,21 @@
             }
         }
 
-        // 待確認的結帳請求。三種畫面狀態（任務 14）：
+        // 待確認的結帳請求。三種畫面狀態：
         //
         // 這裡的設計是整個作品的核心：能操作瀏覽器的 Agent 點得到任何「存在」的按鈕，
         // 所以光是在 WebMCP 工具層不開放付款並不夠。真正的邊界是——
         // 同一台裝置，確認按鈕**根本不會被建立出來**（不是 disabled，是 DOM 裡沒有）；
-        // 另一台裝置但不是本人，一樣沒有確認按鈕，只能看、只能取消。
-        // 付款只能來自本人自己的另一台裝置：使用者自己的手機，或另一個瀏覽器 profile。
-        // 前端這裡的判斷只是使用者體驗（不建立按鈕），真正權威的判斷在伺服器（src/index.js
-        // 的 approve_checkout），就算 Agent 繞過畫面直接送 WebSocket 訊息，伺服器一樣會擋。
+        // 另一台裝置但不是本人，畫面上一樣沒有確認按鈕，只能看、只能取消。
+        //
+        // ⚠️ 這兩種「沒有按鈕」的權威程度不一樣，誠實寫在這裡：
+        // 「同一台裝置」這條，伺服器（src/index.js 的 approve_checkout）真的會擋——
+        // 就算 Agent 繞過畫面直接送 WebSocket 訊息也一樣，因為伺服器讀的是連線本身
+        // 的 deviceId（來自 HttpOnly cookie），訊息內容裡的欄位早就沒有作用了。
+        // 「不是本人」這條，伺服器完全沒有檢查——msg.by 是攻擊者填得出來的欄位，
+        // 拿它當權限依據只會給人假象。這裡純粹是 UI 引導，不建立按鈕只是不鼓勵，
+        // 擋不住一個直接手打 WebSocket 訊息的旅伴。見 docs/TASKS.md 任務 14、
+        // README「Known trade-offs」。
         function renderApprovals() {
             const el = document.getElementById("approvals");
             el.innerHTML = "";
@@ -1267,10 +1272,12 @@
                 line1.innerHTML = `${who} ${esc(t("requestedCheckout"))} <b class="tabular-nums">NT$${p.total.toLocaleString()}</b> (${esc(t("itemCount", p.itemIds.length))})${p.overBudget ? ` <span style="color:var(--danger)">${esc(t("overBudgetLimit"))}</span>` : ""}`;
                 box.appendChild(line1);
 
-                // 跟伺服器同一套判斷（見 src/index.js 的 sameDevice／notTheRequester）：
-                // sessionId 擋同分頁、deviceId 擋同瀏覽器開新分頁；兩條都吃 request_checkout
-                // 存下來的舊欄位，同一批舊資料在改版後重整仍然算得出正確結果。
-                const sameDevice = p.requestedBySession === sessionId || p.requestedByDevice === deviceId;
+                // sameDeviceAsMe 是伺服器算好才送過來的（見 src/index.js 的 state()）——
+                // 前端從來不知道自己的 deviceId 是什麼（它存在 HttpOnly cookie），
+                // 沒辦法自己比對，只能信任伺服器直接告訴我們的結果。
+                // isTheRequester 純粹是 UI 引導用：決定「要不要畫出確認按鈕」，
+                // 伺服器不會用這個名字做任何權限判斷（msg.by 可以被任意填寫，見 src/index.js）。
+                const sameDevice = !!p.sameDeviceAsMe;
                 const isTheRequester = p.requestedBy === me();
 
                 const actions = document.createElement("div");
@@ -1324,8 +1331,9 @@
         }
 
         // ═══ 語言切換 ═══
-        // 只動畫面：不重新註冊工具、不送訊息、不碰 sessionId。
-        // 語言存 localStorage（純顯示偏好）；sessionId 依然刻意不存，跨 session 付款保護不受影響。
+        // 只動畫面：不重新註冊工具、不送訊息、不碰任何裝置身分。
+        // 語言存 localStorage（純顯示偏好）——跟裝置身分是兩件事，裝置身分現在完全交給伺服器的
+        // HttpOnly cookie，這個檔案裡已經沒有 sessionId／deviceId 這兩個變數了。
         // 著陸頁與房間頁共用這一個函式與同一把 localStorage key——著陸頁按鈕見下方 initLanding()。
         function toggleLang() {
             lang = lang === "en" ? "zh" : "en";
@@ -1537,13 +1545,13 @@
         // 付款只能由人在畫面上按下確認。
         mc.registerTool({
             name: "request_checkout",
-            description: "Submit a checkout request for the current user, bundling all priced, unpaid itinerary items together. Important: this tool cannot and will not complete payment. Payment can only be approved by this same user, from a different device — a fellow traveler cannot approve someone else's payment, and the tab that made this request will not show an approve button, so you cannot complete it yourself. After calling this, tell the user to open the same room URL on their own phone or another device to approve it.",
+            description: "Submit a checkout request for the current user, bundling all priced, unpaid itinerary items together. Important: this tool cannot and will not complete payment. Payment can only be approved from a different device than the one that made this request — the tab that made this request will not show an approve button, so you cannot complete it yourself. After calling this, tell the user to open the same room URL on their own phone or another device to approve it.",
             inputSchema: { type: "object", properties: {} },
             execute: () => {
             const spent = mySpent();
             if (spent === 0) return { content: [{ type: "text", text: "There's nothing that needs payment right now." }] };
             requestCheckout(true);
-            return { content: [{ type: "text", text: `Checkout request for NT$${spent.toLocaleString()} sent. I can't complete payment, and this tab won't show an approve button — please open ${location.href} on ${me()}'s own phone or another device to approve it. Only ${me()} can approve this — a fellow traveler cannot do it on their behalf.` }] };
+            return { content: [{ type: "text", text: `Checkout request for NT$${spent.toLocaleString()} sent. I can't complete payment, and this tab won't show an approve button — please open ${location.href} on ${me()}'s own phone or another device to approve it.` }] };
             }
         });
         }, 500);

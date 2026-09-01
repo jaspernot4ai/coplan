@@ -56,8 +56,10 @@ with their own name, and every traveler can bring their own AI agent.
   it is the part of the interface that makes agent collaboration trustworthy.
 - **Payment is the one thing an agent cannot do.** An agent can price the trip, gather the
   bookings and submit a checkout request. It cannot approve it. Approval must come from a
-  different device **and** the same person who requested it — a fellow traveler cannot
-  approve someone else's payment, only the user's own phone or second browser can.
+  different device than the one that requested it, enforced server-side against an
+  `HttpOnly` cookie the agent's own JavaScript can never read or forge — the UI further
+  guides approval to the same person who requested it, though that part is a courtesy, not
+  a server-enforced guarantee (see "Challenges I ran into" below).
 
 ---
 
@@ -136,24 +138,72 @@ it was a per-tab counter. On top of that, the original rule had no identity chec
 *any* other session could approve — including a different member entirely, spending
 someone else's money without them knowing.
 
-The rule is now two conditions, both server-side:
+**The second attempt fixed "new tab" but repeated the same mistake in a different place.**
+I added a second identifier, `deviceId`, generated once and persisted in `localStorage` so
+every tab in the same browser profile would share it — a new tab no longer got a free pass.
+But `deviceId` was still just a value inside the WebSocket message, read from `localStorage`
+by client-side JavaScript and sent as `msg.deviceId`. An agent that can execute JavaScript
+on the page — which is exactly the agent this project is built for — can read
+`localStorage.getItem("coplan-device")` and send whatever value it wants in that field.
+The server was still trusting the client to self-report its own identity; I had just made
+the self-report a little harder to accidentally trigger, not impossible to forge on purpose.
+I never demonstrated this exploit on camera the way I did the `sessionId` one, but the
+reasoning is the same reasoning that broke the first version, and it would have broken this
+one just as completely. I caught it in review, not in a live test — which is itself a lesson
+about where in the client-server boundary trust actually has to live.
 
-1. **A different device**, not merely a different tab — enforced with a second identifier
-   (`deviceId`) that's generated once and persisted in `localStorage`, so every tab in the
-   same browser profile shares it and a new tab no longer gets a free pass.
-2. **The same person who requested it** — a fellow traveler's window can see that a payment
-   is pending, but renders no approve button at all, only the option to decline.
+**The fix was to stop trusting the message content at all.** Device identity now comes from
+something the page's own JavaScript cannot read or write: an `HttpOnly` cookie the server
+issues from a new `GET /api/device` endpoint. The frontend calls it once, before opening the
+WebSocket, purely so the browser has a chance to store the cookie — the response never hands
+the id back to JavaScript. The Worker parses that cookie on every `/api/room/:name` request
+and forwards the device id to the Durable Object through a header it sets itself, overwriting
+whatever the same-named header on the inbound request might already contain, so a client
+can't just send its own `X-Coplan-Device` value and skip the cookie step. Inside the Durable
+Object, `webSocketMessage` never reads `msg.sessionId` or `msg.deviceId` again — device
+identity is attached to the WebSocket connection itself, once, in `fetch()`, using the
+Hibernatable WebSockets API's `serializeAttachment` (a plain in-memory `Map` would have been
+wiped whenever Cloudflare hibernates an idle Durable Object; the attachment survives that).
+
+This closes the class of bug that broke the first two versions — the server no longer asks
+the client "who are you," it just reads a value the client's JavaScript was never given
+in the first place.
+
+**One more honest trade-off came out of getting this right.** The old design also checked
+`msg.by === requestedBy` — "is the approver the same person who requested it" — and blocked
+otherwise. I removed that check server-side. `msg.by` is a name the client puts in the
+message; there's no account system behind it, so treating it as an authorization boundary
+never protected anything real, it just *looked* like it did. Keeping a check that can't
+actually stop a determined bypass, once I understood it couldn't, felt worse than removing
+it: it would have been advertising a guarantee the code didn't provide. So the rule split in
+two, deliberately:
+
+1. **A different device — enforced by the server, and the only thing it actually enforces.**
+   The `HttpOnly` cookie is the boundary an in-browser agent's JavaScript cannot reach.
+2. **The same person who requested it — expressed in the UI, not enforced by the server.**
+   A fellow traveler's window renders no approve button for a payment they didn't request
+   (only the option to decline), which is enough to stop the button from being clicked by
+   accident or by a cooperative agent following instructions. It does **not** stop a fellow
+   traveler's own agent from sending the raw WebSocket message directly — the server would
+   accept it, because from a different device it looks identical to the intended flow. That
+   gap is real, documented under "Known limits" below, and was a deliberate choice over
+   pretending a forgeable field was a real check.
 
 - **Traveling together** — a fellow traveler can see a payment is pending and can decline
-  it (declining is safe, it moves no money), but cannot approve someone else's payment.
+  it (declining is safe, it moves no money) or approve it, since the server does not verify
+  who they are — only that they're on a different device than the one that requested it. The
+  UI never offers them the approve button, so this requires bypassing the interface on
+  purpose; it is not something the normal app flow lets anyone stumble into.
 - **Traveling alone** — the user approves on their **own phone or second browser**, opening
   the same room URL under their own name. This is the flow everyone already knows from bank
-  3-D Secure prompts.
+  3-D Secure prompts, and it's the only flow the UI actually offers.
 
-The declared tool surface tells the agent this in words too, so a cooperative agent guides
-the user to the right device instead of hunting for a button that isn't there. But the
-words are a courtesy; the structure is the boundary — and even the structure has an honest
-edge documented under "Known limits" below, not hidden.
+The declared tool surface tells the agent this in words too — the `request_checkout` tool's
+description says approval must come from a different device, and stops short of claiming
+the server verifies *who* approves, because it doesn't. A cooperative agent guides the user
+to the right device instead of hunting for a button that isn't there. But the words are a
+courtesy; the device boundary is the one piece of structure that actually holds — and even
+that structure has an honest edge documented under "Known limits" below, not hidden.
 
 ### 3. Interfaces built for agents need tighter quotas than interfaces built for people
 
@@ -198,11 +248,13 @@ session, another device, another person. Everything else is a request for good b
 
 ## What's next for CoPlan
 
-- **Hardware-backed device binding** (WebAuthn / passkey) so approval is tied to something a
-  device can prove via the OS/TPM-backed platform authenticator, rather than a `localStorage`
-  value a fresh browser profile can simply not have. This closes the identity-forgery gap
-  described under "Known limits" below — a real account/credential system, not just a bigger
-  random id.
+- **Hardware-backed device binding, plus real identity.** (WebAuthn / passkey) so approval is
+  tied to something a device can prove via the OS/TPM-backed platform authenticator, rather
+  than a cookie any fresh browser profile or private window can simply not have. This is
+  also the only way to close the identity gap under "Known limits" below — the server
+  currently doesn't check identity at all for approvals, on purpose, because a self-reported
+  name was never a real check; a credential system is what would make checking identity
+  server-side actually meaningful instead of theatre.
 - **Real inventory and payments.** Prices are user-entered estimates today; with a real
   catalogue, price must be resolved server-side from the catalogue and never accepted from
   the client or the agent.
@@ -230,18 +282,27 @@ mistaken for oversights:
 - **The server does not validate field types or ranges** beyond an allow-list that protects
   the payment flag.
 - **Payments are simulated.** No real money moves; items are marked paid in DEMO mode.
-- **`deviceId` falls back to a fresh random value if `localStorage` is unavailable** (some
-  private-browsing modes, storage permission denied) — this silently reproduces the original
-  weak per-tab behavior described above. Not a hypothetical edge case; worth knowing before
-  demoing on a locked-down browser.
-- **An agent that can open a private window or a second browser profile** gets a fresh
-  `deviceId` and can legitimately re-declare the same name it already had — passing both
-  checks. Harder than opening a second tab, not impossible.
-- **Identity is a URL parameter, not a credential.** Forging `?as=<someone else's name>`
-  from the *same* device you already used doesn't help (the device check still catches
-  you), but forging it from a genuinely different device is not defended against — there is
-  no account system to tell a real "Cindy" apart from anyone claiming to be Cindy on their
-  own phone.
+- **The server no longer checks identity at all for approvals — only device.** Earlier
+  designs checked `msg.by === requestedBy` and blocked otherwise; that check was removed
+  deliberately once I recognized it was authorizing against a value the client fully
+  controls, which never protected anything real. A genuinely different device can approve
+  *anyone's* payment under *any* name it claims — the UI never offers that path to a normal
+  user (only the requester's own name gets an approve button, on a different device), but a
+  fellow traveler's own agent sending the raw WebSocket message directly is not stopped by
+  the server. This is a real, current limit, not a hypothetical one.
+- **The device credential falls back to a fresh random value if no cookie is presented at
+  all** — this happens for a client that skips the browser's normal cookie handling
+  entirely (a bare script talking the WebSocket protocol directly, not a real browser tab),
+  or a browser configured to block cookies outright. Every such connection looks like a
+  brand-new "device" to the server, which trivially satisfies the "different device" check.
+  This does **not** apply to an agent operating inside a real browser tab — the browser
+  attaches the `HttpOnly` cookie to the WebSocket handshake automatically, and the agent's
+  JavaScript has no way to see or omit it.
+- **An agent that can open a private/incognito window or a second browser profile** gets a
+  cookie jar with no `coplan_device` cookie yet, so the server issues it a fresh one —
+  a legitimately different device by the server's own definition, and (per the point above)
+  it doesn't even need to claim the right name to use it. Meaningfully harder than opening a
+  second tab in the same profile, not impossible.
 - **An agent that controls every one of your devices** defeats device-bound approval
   entirely — but that is a fully compromised-device threat model, not the one this project
   addresses.

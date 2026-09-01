@@ -68,13 +68,20 @@ export class RoomDO {
     });
   }
 
-  // 廣播格式集中在這裡，加欄位只要改一個地方
-  state() {
+  // 廣播格式集中在這裡，加欄位只要改一個地方。
+  // forDeviceId：這個 payload 是要送給哪個連線的——每個連線的 deviceId 不同，
+  // 「這筆待確認是不是我自己那台裝置發起的」這件事本來就因人而異，沒辦法用同一份
+  // JSON 廣播給所有人。這裡只送出算好的布林值 sameDeviceAsMe，不送出原始 requestedByDevice，
+  // 避免把裝置 id 這種內部識別碼不必要地攤在所有連線的畫面上。
+  state(forDeviceId) {
     return JSON.stringify({
       items: this.items,
       log: this.log,
       members: this.members,
-      pendingApprovals: this.pendingApprovals,
+      pendingApprovals: this.pendingApprovals.map(({ requestedByDevice, ...rest }) => ({
+        ...rest,
+        sameDeviceAsMe: requestedByDevice === forDeviceId,
+      })),
     });
   }
 
@@ -94,8 +101,18 @@ export class RoomDO {
   async fetch(request) {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
+
+    // 裝置身分只信任 Worker 轉發過來的這個 header（見檔案最下面的 Worker fetch()），
+    // 完全不看訊息內容——webSocketMessage 之後只會從這個連線的 attachment 讀 deviceId，
+    // 不會再看 msg.deviceId／msg.sessionId，那兩個欄位是攻擊者可以任意填寫的。
+    // 用 serializeAttachment 而不是一個 Map<ws, deviceId>：這個 DO 用的是 Hibernatable
+    // WebSockets API（acceptWebSocket），閒置時整個物件可能被回收、記憶體裡的 Map 會消失，
+    // 只有 serializeAttachment 存的東西保證在下次喚醒時還在同一個連線上讀得到。
+    const deviceId = request.headers.get("X-Coplan-Device") || crypto.randomUUID();
+    server.serializeAttachment({ deviceId });
+
     this.ctx.acceptWebSocket(server);
-    server.send(this.state());
+    server.send(this.state(deviceId));
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -112,7 +129,18 @@ export class RoomDO {
 
     const msg = JSON.parse(message);
 
+    // 這個連線的裝置身分（來自 fetch() 時存的 attachment），以及它目前宣稱的名字
+    // （由 join 訊息設定）。set_budget／reset_room 用 name 判斷「這個連線有沒有以
+    // 這個身分加入過」；approve_checkout 用 deviceId 判斷「是不是同一台裝置」。
+    const attachment = ws.deserializeAttachment() || {};
+    const deviceId = attachment.deviceId;
+
     if (msg.t === "join") {
+      // 記住這個連線宣稱的名字，讓之後的 set_budget／reset_room 可以比對「這個連線
+      // 有沒有以這個身分加入過」——不是身分驗證（名字本來就可以隨便宣稱），
+      // 只是擋掉「完全沒加入過就能操作」這種最低成本的濫用。
+      ws.serializeAttachment({ ...attachment, name: msg.name });
+
       const isNew = !this.members[msg.name];
       this.members[msg.name] = { name: msg.name, lastSeen: Date.now() };
       if (isNew) {
@@ -180,8 +208,18 @@ export class RoomDO {
     }
 
     // 設定個人預算上限。預算屬於「人」而不是「行程」，所以存在 members 上。
+    // 補上零授權缺口：這個連線必須先以 msg.by 這個名字 join 過，才能設定這個名字的預算——
+    // 沒有帳號系統，這不是真正的身分驗證（誰都能自己 join 成任何名字），
+    // 但至少擋掉「完全沒宣稱過某個身分、單靠一則訊息就能改別人預算」這種零成本濫用。
     if (msg.t === "set_budget") {
-      if (this.members[msg.by]) {
+      if (attachment.name !== msg.by) {
+        this.addLog({
+          who: msg.by,
+          viaAgent: msg.viaAgent,
+          action: "budget_blocked",
+          summary: `Blocked: this connection hasn't joined as ${msg.by}, so it can't set their budget.`,
+        });
+      } else if (this.members[msg.by]) {
         this.members[msg.by].budget = Number(msg.budget) || 0;
         this.addLog({
           who: msg.by,
@@ -196,9 +234,12 @@ export class RoomDO {
     // 這是整個作品的核心主張 —— 花錢那一步在結構上就不開放給 Agent，
     // 不是靠 prompt 拜託它自律，而是這條路徑根本沒有完成交易的能力。
     if (msg.t === "request_checkout") {
-      const sessionAlreadyPending = this.pendingApprovals.some(p => p.requestedBySession === msg.sessionId);
+      // 用連線的 deviceId 判斷「這台裝置」有沒有待確認請求，不再看 msg.sessionId——
+      // 理由跟 approve_checkout 一樣：sessionId 是前端訊息裡的欄位，攻擊者填得出來，
+      // deviceId 來自 fetch() 時的連線層級 attachment，訊息內容改不了它。
+      const deviceAlreadyPending = this.pendingApprovals.some(p => p.requestedByDevice === deviceId);
 
-      if (sessionAlreadyPending) {
+      if (deviceAlreadyPending) {
         this.addLog({
           who: msg.by,
           viaAgent: msg.viaAgent,
@@ -222,8 +263,7 @@ export class RoomDO {
         this.pendingApprovals.push({
           id: crypto.randomUUID(),
           requestedBy: msg.by,
-          requestedBySession: msg.sessionId,
-          requestedByDevice: msg.deviceId,
+          requestedByDevice: deviceId,
           viaAgent: !!msg.viaAgent,
           itemIds: mine.map(a => a.id),
           total,
@@ -247,12 +287,15 @@ export class RoomDO {
       if (idx >= 0) {
         const approval = this.pendingApprovals[idx];
 
-        // 放行必須同時滿足兩條：確認者不是同一台裝置、且確認者就是本人。
-        // sessionId 的檢查繼續保留（同分頁重送訊息這種最直接的情況交給它擋），
-        // deviceId 額外擋掉「同瀏覽器開新分頁」——實測發現 sessionId 單獨擋不住這個洞：
-        // sessionId 每次頁面載入都重新產生、不存 localStorage，新分頁就是新 session，舊版檢查會放行。
-        const sameDevice = msg.sessionId === approval.requestedBySession || msg.deviceId === approval.requestedByDevice;
-        const notTheRequester = msg.by !== approval.requestedBy;
+        // 放行只認一條，而且完全不看訊息內容：確認者的連線 deviceId（來自伺服器發的
+        // HttpOnly cookie，webSocketMessage 開頭已經從 attachment 讀出）不能等於發起請求
+        // 那個連線的 deviceId。不再檢查「確認者是不是本人」（msg.by === approval.requestedBy）——
+        // msg.by 是前端訊息裡的欄位，任何連線都填得出任何名字，拿一個攻擊者自己填的欄位
+        // 當作權限依據，只會給人一種「有身分檢查」的假象，卻擋不住真正想繞過的人。
+        // 「必須是本人」這件事改成只在 UI 表達（見 public/index.html 的 renderApprovals：
+        // 只有 me() === requestedBy 且不同裝置才會畫出確認按鈕），伺服器唯一守住的、
+        // 也是唯一守得住的邊界，是裝置。這個取捨記在 docs/TASKS.md 任務 14 與 README。
+        const sameDevice = deviceId === approval.requestedByDevice;
 
         if (sameDevice) {
           this.addLog({
@@ -260,13 +303,6 @@ export class RoomDO {
             viaAgent: false,
             action: "approve_blocked",
             summary: "Approval blocked: this is the same device that requested checkout. Approve from a different device.",
-          });
-        } else if (notTheRequester) {
-          this.addLog({
-            who: msg.by,
-            viaAgent: false,
-            action: "approve_blocked",
-            summary: `Approval blocked: only ${approval.requestedBy} can approve this payment.`,
           });
         } else {
           for (const a of this.items) {
@@ -285,19 +321,32 @@ export class RoomDO {
 
     // 錄影與評審試玩用的重置。一次清空，避免逐筆刪除在時間軸留下數十筆雜訊。
     // members 保留，這樣重置後成員顏色與名單不變，錄影可以直接接著開始。
+    // 補上零授權缺口：重置是全房間、不可逆的破壞性操作，改版前任何連線送一則訊息
+    // 就能清空所有人的資料。現在跟 set_budget 用同一套最低限度的判斷——這個連線
+    // 必須先以 msg.by 這個名字 join 過。擋不住「本來就在房間裡的人」惡意重置
+    // （沒有帳號系統做不到這件事），但至少擋掉連 join 都沒做的最低成本濫用。
     if (msg.t === "reset_room") {
-      this.items = [];
-      this.log = [];
-      this.pendingApprovals = [];
-      this.addLog({
-        who: msg.by,
-        viaAgent: false,
-        action: "reset_room",
-        summary: "Room reset — itinerary, timeline and pending approvals cleared",
-      });
-      await this.save();
-      this.broadcast();
-      return;
+      if (attachment.name !== msg.by) {
+        this.addLog({
+          who: msg.by,
+          viaAgent: false,
+          action: "reset_blocked",
+          summary: `Blocked: this connection hasn't joined as ${msg.by}, so it can't reset the room.`,
+        });
+      } else {
+        this.items = [];
+        this.log = [];
+        this.pendingApprovals = [];
+        this.addLog({
+          who: msg.by,
+          viaAgent: false,
+          action: "reset_room",
+          summary: "Room reset — itinerary, timeline and pending approvals cleared",
+        });
+        await this.save();
+        this.broadcast();
+        return;
+      }
     }
 
     // 人也可以直接否決 Agent 的請求
@@ -320,10 +369,13 @@ export class RoomDO {
     this.broadcast();
   }
 
+  // 每個連線的 sameDeviceAsMe 不一樣，沒辦法像以前那樣算一份 JSON 廣播給所有人——
+  // 這是被裝置綁定機制逼出來的必要延伸，不是額外加的功能。連線數在這個作品的規模下
+  // 頂多幾個人，逐一算一次 state() 的成本可以忽略。
   broadcast() {
-    const payload = this.state();
     for (const socket of this.ctx.getWebSockets()) {
-      socket.send(payload);
+      const attachment = socket.deserializeAttachment() || {};
+      socket.send(this.state(attachment.deviceId));
     }
   }
 
@@ -336,17 +388,63 @@ export class RoomDO {
   }
 }
 
+// 只解析我們自己要用的那一個 cookie，不需要一整個 cookie-parsing 套件。
+function readDeviceCookie(request) {
+  const header = request.headers.get("Cookie") || "";
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === "coplan_device") {
+      return decodeURIComponent(part.slice(eq + 1).trim());
+    }
+  }
+  return null;
+}
+
 // ② Worker：看網址決定把請求轉給哪個房間
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // 發裝置憑證。前端在建立 WebSocket 之前一定會先呼叫這支、並 await 它完成，
+    // 讓瀏覽器有機會先把 Set-Cookie 存好。這支端點本身不回傳 deviceId 給 JS——
+    // HttpOnly 讀不到本來就是整個機制的重點，能執行 JS 的 Agent 不該摸得到這個值，
+    // 這是它跟舊版存在 localStorage 的 deviceId 的根本差異。
+    if (url.pathname === "/api/device") {
+      if (readDeviceCookie(request)) {
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const deviceId = crypto.randomUUID();
+      // Secure 只在真的是 https 時才加——本機 wrangler dev 是 http，瀏覽器會直接
+      // 拒存帶 Secure 的 cookie（且 127.0.0.1 不像 localhost 那樣有例外），
+      // 硬加只會讓本機測試連 cookie 都存不進去，而 http 底下 Secure 也不提供任何保護。
+      const secure = url.protocol === "https:" ? "; Secure" : "";
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: {
+          "Content-Type": "application/json",
+          "Set-Cookie": `coplan_device=${deviceId}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000${secure}`,
+        },
+      });
+    }
+
     const match = url.pathname.match(/^\/api\/room\/([\w-]+)$/);
 
     if (match) {
       const roomName = match[1];
       const id = env.ROOM.idFromName(roomName);
       const room = env.ROOM.get(id);
-      return room.fetch(request);
+
+      // 裝置身分只信任這裡解析出來的 cookie，不信任 client 送來的任何欄位。
+      // 用一個新 Headers 物件、明確 set() 覆蓋這個 header 再轉發——就算原始請求
+      // 自己塞了一個同名的 X-Coplan-Device header 想冒充別的裝置，也會被這裡蓋掉，
+      // 因為 DO 那邊只認這個 header，不會回頭看訊息內容。
+      const deviceId = readDeviceCookie(request) || crypto.randomUUID();
+      const headers = new Headers(request.headers);
+      headers.set("X-Coplan-Device", deviceId);
+      const forwarded = new Request(request, { headers });
+      return room.fetch(forwarded);
     }
 
     return new Response("Not found", { status: 404 });
