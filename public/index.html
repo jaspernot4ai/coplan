@@ -278,12 +278,16 @@
         transform: translateY(-50%);
       }
       .ld-demo-block.block {
-        left: 70px; width: calc(50% - 8px); font-size: 12px;
+        /* 可用寬度＝容器寬－左側刻度欄－右側留白，兩張卡再對半分、中間扣一份間距——
+           50% 不能直接拿容器寬去算，刻度欄佔掉的 70px 一定要先扣掉。 */
+        --ld-demo-gutter: 70px;
+        left: var(--ld-demo-gutter); width: calc((100% - var(--ld-demo-gutter) - 24px) / 2); font-size: 12px;
         animation: ld-settle .9s cubic-bezier(.2,.8,.2,1) both;
       }
       .ld-demo-a.block { top: 40px; height: 84px; animation-delay: .1s; }
       .ld-demo-b.block {
-        top: 70px; height: 84px; left: calc(70px + 50% - 4px);
+        top: 70px; height: 84px;
+        left: calc(var(--ld-demo-gutter) + (100% - var(--ld-demo-gutter) - 24px) / 2 + 8px);
         animation-delay: .55s;
         border-color: var(--warn); background: var(--warn-bg); border-left: 3px solid var(--warn); padding-left: 4px;
       }
