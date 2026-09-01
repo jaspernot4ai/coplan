@@ -727,3 +727,96 @@ if (msg.t === "reset_room") {
   刻意不共用是兩件不同的事，語言偏好本來就沒有要求跨分頁隔離，只是要求「不進房間狀態」，
   這點有守住。
 
+---
+
+## 任務 11：把 repo 的提交門面補完 ✅
+
+範圍：確認 commit 都推上 origin、確認 LICENSE 能被 GitHub 認出來、補 About 欄位（description／homepage／topics）。
+
+**改了哪些檔案**：這個任務不改程式碼，只動 git 歷史（push）與 GitHub repo 的 metadata（`gh repo edit`）。沒有 diff。
+
+**不可破壞清單逐條確認**：無涉及——這個任務不碰 `src/index.js`、不碰 `public/index.html`、不碰 `wrangler.jsonc`。
+
+**我自己驗證過的項目**：
+1. **commit 都推上去了**：`git status` 確認當時只有 `public/index.html` 是未 commit 的（任務 10 進行中的工作，刻意沒動它），`docs/TASKS.md` 的任務 9 回報已經是獨立一筆 commit `c87bd52`。`git fetch origin` 後發現 `origin/main` 落後本機兩筆（`083e206` 任務 8+9 語言切換、`c87bd52` 任務 9 回報），`git push -u origin main` 後用 `git log --oneline origin/main -5` 實測確認這兩筆都在遠端了。
+2. **LICENSE 檔名與內容**：`git ls-tree origin/main --name-only | grep -i license` 確認遠端上的檔名就是 `LICENSE`（沒有副檔名）。內容逐字讀過，是標準未修改的 MIT 全文，`Copyright (c) 2026 CoPlan`，年份與著作權人都在。用 `gh repo view --json licenseInfo` 直接問 GitHub API 確認，回傳 `{"key":"mit","name":"MIT License"}`——GitHub 已經認出來了，不是你看到的頁面快取問題。
+3. **About 欄位**：`gh auth status` 確認已登入帳號 `jaspernot4ai`。執行 `gh repo edit` 設定 description／homepage／五個 topic，完成後用 `gh repo view --json description,homepageUrl,repositoryTopics,licenseInfo` 重新查詢 API（不是只看指令有沒有報錯）確認四項都正確落地。
+
+**description 我擬的句子**："Multiplayer itinerary planning where every traveler's AI agent can edit the same trip in real time — but checkout always needs a human on a different device to approve."（175 字元，在 350 字元限制內）。方向照你的指示：多人 × 多 Agent 共用同一份行程表、花錢前由人在另一個裝置放行。
+
+**驗證中發現並修正的問題**：無——三項都是第一次執行就正確，沒有需要修正的地方。
+
+**判斷是誤報、未修改的項目**：無。
+
+**需要你自己確認的項目**：description 的英文措辭是我擬的，若你有更精準的定位用詞（例如想強調 WebMCP 這個技術名詞本身），可以再告訴我調整；目前這句沒有出現「WebMCP」字樣，是刻意寫給不一定懂這個字的人看的一句話，topics 裡已經有 `webmcp` 這個字補上技術關鍵字面。
+
+**規格未明講、我自己判斷的地方**：topics 完全依你給的五個照加，沒有自行增減；homepage 用你給的部署網址，沒有另外確認該網址目前是否可正常連線（那是任務 10 驗證範圍內的事）。
+
+---
+
+## 任務 10：著陸頁 + 進房入口 ✅
+
+範圍：`/` 顯示著陸頁（不再落進 lobby 房間）、`/r/:roomId` 行為完全不變、Try it／進房表單、著陸頁雙語、Chrome／ChatGPT 接上 Agent 的說明。
+
+### 0.5 frontend-design skill 的實際使用狀況（先說明，避免誤解）
+
+這個環境一開始沒裝 `frontend-design` skill（`Skill` 工具回報 `Unknown skill`）。你選了「去裝」，我用 `claude plugin marketplace add anthropics/skills` 加了官方 marketplace、`claude plugin install example-skills@anthropic-agent-skills` 裝了含這個 skill 的套件包——但套件要重啟 session 才會註冊進 `Skill` 工具，這個 session 是背景工作、我沒辦法自己重啟。**我改成直接讀取已下載到本機的 `SKILL.md` 原始檔**（`~/.claude/plugins/marketplaces/anthropic-agent-skills/skills/frontend-design/SKILL.md`），把它的設計流程（先定調色票／字體／版面／signature 四件事、對照三種「一看就是 AI 生的」樣板自我批判、剋制、只在一個地方放膽）整段讀完後手動照著做。**效果上等同呼叫了這個 skill，但技術上不是透過 `Skill` 工具執行的**——如果你在意這個技術細節，之後重啟過 session 後可以請我用真正的 `Skill` 工具重跑一次設計批判，看有沒有出入。
+
+### 改了哪些檔案
+
+只有 `public/index.html`。`git diff --stat`：
+
+```
+public/index.html | 421 ++++++++++++++++++++++++++++++++++++++++++++++++------
+1 file changed, 374 insertions(+), 47 deletions(-)
+```
+
+`src/index.js`、`wrangler.jsonc` 的 `git diff --stat` 皆為空，完全沒有動。
+
+### 不可破壞清單逐條確認
+
+- **完全不動 `src/index.js`**：`git diff --stat src/index.js` 空。✅
+- **不動 `wrangler.jsonc`**：`git diff --stat wrangler.jsonc` 空。過程中一度以為要靠改它才能修好 `/r/:roomId` 的路由，後來查清楚是我自己的測試方法有問題（見下方「驗證中發現並修正的問題」），完全不需要動這個檔案。✅
+- **`/r/:roomId` 行為完全不變**：用 `git diff` 對 `public/index.html` 做了針對性 grep，確認以下區塊**沒有任何一行改動**：6 個 WebMCP 工具的 `registerTool`／`inputSchema`／`description`、`addActivity`／`updateActivity`／`removeActivity`／`setBudget`／`requestCheckout`／`approveCheckout`／`rejectCheckout`／`esc`／`colorOf`／`toMinutes`／`computeTimeRange`／`groupOverlaps`／`buildBlock`／`render`／`renderEditCard`／`renderLog`／`renderMembers`／`renderBudget`／`renderApprovals`／`maybeSeedDemo`／`maybeReset` 的函式本體，以及結帳橫幅的 `lockLine`／`cancelRequest`／`fromAnotherDevice`／`approvePayment`／`decline` 文字。實際改動的只有：把「建立 WebSocket + 註冊 WebMCP 工具」與「人的表單按鈕綁定」這兩段包進 `if (isRoomMode) { ... }`，以及 `applyLang()` 加了幾行處理著陸頁的分支。這些包裝本身不改變房間模式裡面任何一行邏輯的執行順序或內容。
+- **`docs/DESIGN-V2.md` 第 1 節**：房間頁的 DOM 結構、CSS、渲染函式一行都沒改，第 1 節逐條仍然成立（沿用任務 8／9 已經驗證過的結論，這次沒有理由讓它們失效）。
+
+### 兩個技術前提的實作方式
+
+- **模式判斷**：`const roomPathMatch = location.pathname.match(/^\/r\/([\w-]+)/); const isRoomMode = !!roomPathMatch;`，放在 script 最前面。原本無條件執行的 `new WebSocket(...)` 與 `setInterval(...)`（WebMCP 偵測＋註冊）都收進 `if (isRoomMode) { ... }`；`else` 分支呼叫 `initLanding()`。`.app`（房間頁整個版面）在著陸頁模式下用 `document.querySelector(".app").style.display = "none"` 隱藏——**只改 inline style，沒有動任何一行既有 CSS 規則**。著陸頁的 HTML 是 `.app` 關閉標籤後新增的一個 `<div id="landing" hidden>` 兄弟節點，CSS 全部新增在 `</style>` 前，沒有插進既有規則中間。
+- **Try it 隨機房號**：`ROOM_WORDS`（十個日本地名，呼應這個 demo 的東京行程主題）＋ 4 碼隨機字尾，例如 `hakone-dgvd`。獨立跑了一支 Node 腳本連續呼叫這個邏輯 20 次，20 次全部不重複，格式符合 `/^[a-z]+-[a-z0-9]{4}$/`。Try it 固定帶 `seed=1`；進房表單房號留白時也會隨機新房間，但**不帶** `seed=1`（見下方「規格未明講」）。
+
+### 我自己驗證過的項目，以及驗證方法（這次沒有 Playwright，方法先說清楚）
+
+這個 session 的 Playwright MCP 從一開始就是斷線狀態（`CONNECT_TIMEOUT`），中途重試過一次仍然沒有恢復。第 6 節要求的「實際觀測，不是讀程式碼推論」在沒有真瀏覽器的情況下沒辦法用視覺截圖做到，所以我改用**能拿到的最接近的替代方案**：在本機 `wrangler dev` 前，用 `jsdom` 在隔離環境（裝在 `$CLAUDE_JOB_DIR/tmp` 底下，不是這個專案的 `node_modules`，`package.json`／`package-lock.json` 完全沒被動到）真的把整支 `<script>` 抓下來、真的執行過，攔截 `WebSocket` 建構子與 `setInterval` 呼叫次數來看它們有沒有被觸發——這是動態執行後觀測的結果，不是靜態讀程式碼推論出「應該會這樣」。
+
+1. **`/` 顯示著陸頁，且沒有 WebSocket 連線、沒有註冊 WebMCP 工具**（實測，非推論）：對 `http://127.0.0.1:8787/` 抓到的真實 HTML 用 jsdom 執行整支 script，攔截後量到 `WebSocket` 建構子呼叫次數 = 0、`setInterval` 呼叫次數 = 0、`#landing` 的 `hidden` 屬性被移除（可見）、`.app` 的 inline `display` 被設成 `"none"`。
+2. **`/r/:roomId` 行為與改動前完全相同**（實測）：同樣手法對 `/r/test123?as=Alice` 執行，量到 `WebSocket` 建構子確實被呼叫一次、連線位址正確是 `ws://127.0.0.1:8787/api/room/test123`（房號從路徑正確解析出來）、`setInterval` 被呼叫一次（WebMCP 偵測輪詢有啟動）、`#landing` 保持 `hidden`、`.app` 保持預設可見。另外針對「任務 9 已經驗收過的房間頁語言切換」單獨補了一次迴歸測試：在房間模式下點擊 `#langToggle`，量到 `#checkout` 文字從 `Checkout` 變成 `結帳`、`.travelers-label` 變成「旅伴」、房號標籤正確顯示「房間 roomtoggletest」——確認我在 `applyLang()` 裡加的著陸頁分支沒有連帶弄壞房間頁原本就有的語言切換。
+3. **著陸頁雙語切換**（實測）：對著陸頁執行整支 script 後點擊 `#langToggleLanding`，量到 hero 標題、eyebrow 標籤、Chrome 說明卡片內文全部從英文正確變成中文，`document.documentElement.lang` 變成 `zh-Hant`，`localStorage.getItem("coplan-lang")` 變成 `"zh"`，而且整個切換過程中 `WebSocket` 建構子呼叫次數維持 0——語言切換本身不會意外觸發連線。「從著陸頁切成中文後進房，房間頁仍是中文」這一條沒有另外做一次真的跨頁導覽測試（jsdom 不適合模擬真實頁面跳轉），但它是上面兩項各自獨立驗證過的機制的直接組合：兩種模式讀的是同一把 `localStorage` key、同一套 `lang` 變數與 `applyLang()`，機制本身沒有分岔，我認為這個組合結論站得住，但如果你想要更嚴格的證據，這條建議留給你或之後 Playwright 恢復連線時補一次真的兩頁導覽測試。
+4. **JS 語法**：`node --check` 通過。
+5. **Console 錯誤**：jsdom 的 `window.addEventListener("error", ...)` 在上述所有執行過程中都沒有捕捉到任何錯誤。
+
+### 驗證中發現並修正的問題（其實是我自己的測試方法有問題，不是程式碼的 bug）
+
+一開始用 `curl` 直接測 `/r/test123`，本機與**正式上線的 `https://coplan.coplan-lab.workers.dev/r/tokyo?as=You&seed=1`**（`docs/SUBMISSION.md` 寫的那個 Live demo 連結）都回傳 `404 Not found`（就是 `src/index.js` 自己那段 catch-all 的文字）。一度以為找到一個提交等級的嚴重 bug、準備要回報給你，甚至一度懷疑要不要動 `wrangler.jsonc`。
+
+查證後發現是**我的測試方法本身的問題**，不是程式碼的 bug：Cloudflare 的 `not_found_handling: single-page-application` 這個 SPA fallback，是靠請求是否「像瀏覽器導覽」的訊號（`Sec-Fetch-Mode: navigate` 之類的 header）決定要不要生效——查了 Cloudflare 官方文件（`developers.cloudflare.com/workers/static-assets/binding`）確認 `run_worker_first` 預設是 `false`（asset-first），這點沒有問題；問題出在我用**沒有帶這些 header 的裸 `curl`**去測。補上 `-H "Sec-Fetch-Mode: navigate"` 之後，同一個正式網址立刻回 `200`，內容正確。真正的瀏覽器（包含 Playwright 驅動的瀏覽器）本來就會自動帶這些 header，所以任務 8／9 用 Playwright 測 `/r/lobby` 之類的路徑從頭到尾都是對的，是我這次在沒有 Playwright 的情況下用 `curl` 直接測才踩到這個假警報。上面第 6 節的 jsdom 動態測試我後來也統一補上了同樣的 header，才拿到正確結果。
+
+**結論：`/r/:roomId` 的路由與 SPA fallback 沒有任何問題，`wrangler.jsonc` 不需要動，這不是任務 10 的 bug，也不是任何既有程式碼的 bug——純粹是我測試工具選錯的假警報，寫在這裡是為了讓你知道我認真查證過、不是隨口說「應該沒事」。**
+
+### 判斷是誤報、未修改的項目
+
+上一節那個「`/r/:roomId` 404」就是本輪唯一一個誤報，已經在上面完整交代查證過程，沒有動任何程式碼。
+
+### 需要你自己確認的項目（我這邊無法驗證）
+
+- **375／768／1280 三種寬度 × 兩種語言的視覺檢查**：jsdom 沒有真正的 CSS 版面引擎（`getBoundingClientRect` 在 jsdom 裡固定回傳 0），沒辦法測橫向捲動或元素重疊。CSS 本身沿用了任務 8／9 已經驗證過的 `flex-wrap` + `min-height` 手法（`.ld-hero`／`.ld-gate`／`.ld-connect-grid` 在 900px 與 480px 都有對應的媒體查詢改成單欄），但沒有實機截圖佐證，等 Playwright 恢復連線或你自己開瀏覽器縮放視窗確認一次。
+- **開了 WebMCP flag 的 Chrome、ChatGPT 桌面版實測**：這條規格本來就明講不要用 Playwright 測，一直都是留給你的項目，這次也一樣。
+- **著陸頁的 Chrome／ChatGPT 接上步驟文案是否仍是目前的真實步驟**：我沒有自己重新實測（沒有真瀏覽器），文案是交叉比對 `README.md`（"an Origin Trial token is only needed for the deployed domain, not localhost"）、`docs/DEMO-SCRIPT.md`（模型必須是 GPT-5.6 Sol 或 Terra，Luna 不支援）、`docs/SUBMISSION.md`（"Works in Chrome 149+ ... no flags needed"）三份文件互相印證後寫的，不是憑空抄一份舊文件，但也不是我自己重新測出來的第一手結果——你在指示裡特別強調這點要「以實測為準」，這條我做不到，需要你親自確認現在還是不是這樣。
+
+### 規格未明講、我自己判斷的地方
+
+- **進房表單房號留白時，不帶 `seed=1`**：規格說「房號留白就隨機」，但沒說要不要塞示範資料。我判斷 Try it 的用途是「給我一個立刻能看的 demo」，進房表單的用途是「我想直接開始用 / 準備輸入房號找旅伴」，兩者留白時的意圖不同，所以只有 Try it 帶 `seed=1`。如果你希望進房表單留白也塞示範資料，一行判斷式可以改。
+- **房號詞庫**：用十個日本地名（tokyo／kyoto／osaka…）而非隨機英文單字或純亂碼，呼應這個 demo 本身的東京行程主題，也讓房號比純 hex 好記、好念出來給旅伴聽。
+- **著陸頁的設計語言延伸**：新增了三個衍生 CSS 變數（`--ld-accent-2`、`--ld-accent-wash`、`--ld-ink-soft`），全部用 `color-mix()` 或手調色階從既有的 `--accent`／`--ink` 算出來，沒有引入新色相；只在著陸頁的區塊裡定義，房間頁看不到也用不到這幾個變數。Hero 示意圖直接複用房間頁真正的 `.block`／`.conflict`／`.block-meta` 這些 class 手動擺出兩個「時間重疊」的行程卡片（固定座標，不接真資料），不是另外畫一張示意圖或插圖——這是這次設計唯一放膽的地方（frontend-design skill 說的「signature」），其餘版面刻意剋制。動畫只有 hero demo 卡片的進場位移，用 `@media (prefers-reduced-motion: reduce)` 關掉。
+- **GitHub 連結**：用你在這次指示裡明講的 `https://github.com/jaspernot4ai/coplan`（在此之前我原本打算先問你，後來看到 `docs/SUBMISSION.md` 已經寫著同一個網址，判斷可以直接採用；這次你也直接把網址寫進指示裡，兩邊一致，沒有衝突）。
+

@@ -223,6 +223,118 @@
         .grid-body { flex-direction: column; }
         .day-block:not(:first-child) .gutter { visibility: visible; }
       }
+
+      /* ══════════════════════════════════════════════════════════════════
+         著陸頁（/ 路徑，非 /r/:roomId）。只在這裡新增規則，房間頁上面的
+         每一條既有規則一行都沒動。色票延伸自房間頁的 --ink/--accent 等變數，
+         沒有引入新色系；字體沿用同一套 system-ui stack，沒有另外載字型。
+         ══════════════════════════════════════════════════════════════ */
+      #landing {
+        /* 從房間頁的 --accent 系列延伸出的著陸頁專屬衍生色：
+           一個更深的漸層終點、一個供大片留白背景用的極淡系。房間頁本身不用這幾個變數。 */
+        --ld-accent-2: #3f3fb8;
+        --ld-accent-wash: #f2f1fc;
+        --ld-ink-soft: color-mix(in srgb, var(--ink) 72%, transparent);
+      }
+      #landing { background: var(--bg); color: var(--ink); min-height: 100vh; }
+      #landing a { color: inherit; }
+      #landing .btn { font-size: 14px; }
+
+      .ld-topbar {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 18px 28px; border-bottom: 1px solid var(--line);
+      }
+      .ld-topbar-actions { display: flex; align-items: center; gap: 10px; }
+
+      /* Hero：不對稱兩欄。左邊是論點，右邊是「產品本身長怎樣」的活示範——
+         不是插圖，是拿房間頁真正的 .block／.conflict 組件直接演示衝突並排這個核心機制。 */
+      .ld-hero {
+        display: grid; grid-template-columns: 1.1fr 1fr; align-items: center; gap: 48px;
+        padding: 64px 28px 80px; max-width: 1180px; margin: 0 auto;
+        background:
+          radial-gradient(120% 140% at 100% 0%, var(--ld-accent-wash), transparent 55%);
+      }
+      .ld-hero-copy .section-title { margin-bottom: 14px; }
+      .ld-hero-copy h1 {
+        font-size: clamp(32px, 4.4vw, 52px); font-weight: 800; letter-spacing: -0.02em;
+        line-height: 1.08; margin: 0 0 20px;
+      }
+      .ld-sub { font-size: 16px; line-height: 1.6; color: var(--ink-2); max-width: 46ch; margin: 0 0 28px; }
+      .ld-cta-row { display: flex; }
+      .ld-tryit { display: flex; gap: 8px; flex-wrap: wrap; }
+      .ld-tryit input { min-width: 200px; flex: 1 1 200px; }
+      .ld-tryit .btn { flex: 0 0 auto; white-space: nowrap; }
+      .ld-demo-note { font-size: 12px; color: var(--muted); margin: 14px 0 0; }
+
+      /* 這個示範網格是純展示用，不接資料、不送訊息——用固定座標＋輕微擺動動畫，
+         演的就是規格第 0 節說的那句話：「重疊的行程真的在畫面上撞在一起」。 */
+      .ld-hero-demo {
+        position: relative; height: 280px; background: var(--panel);
+        border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+        box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px -16px rgba(31,35,40,.18);
+      }
+      .ld-demo-tick {
+        position: absolute; left: 14px; font-size: 11px; color: var(--muted);
+        transform: translateY(-50%);
+      }
+      .ld-demo-block.block {
+        left: 70px; width: calc(50% - 8px); font-size: 12px;
+        animation: ld-settle .9s cubic-bezier(.2,.8,.2,1) both;
+      }
+      .ld-demo-a.block { top: 40px; height: 84px; animation-delay: .1s; }
+      .ld-demo-b.block {
+        top: 70px; height: 84px; left: calc(70px + 50% - 4px);
+        animation-delay: .55s;
+        border-color: var(--warn); background: var(--warn-bg); border-left: 3px solid var(--warn); padding-left: 4px;
+      }
+      @keyframes ld-settle { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+      .ld-join { padding: 0 28px 72px; max-width: 1180px; margin: 0 auto; }
+      .ld-join-card { max-width: 640px; }
+      .ld-join-sub { font-size: 13px; color: var(--ink-2); margin: -6px 0 16px; }
+      .ld-join-row { display: flex; gap: 8px; flex-wrap: wrap; }
+      .ld-join-row input { flex: 1 1 160px; min-width: 140px; }
+      .ld-join-row .btn { flex: 0 0 auto; }
+
+      /* 付款閘門展示：直接沿用房間頁的 .approval-banner 樣式，不重造一套——
+         這是刻意的：著陸頁的示範長得跟房間頁裡真的會出現的東西一模一樣。 */
+      .ld-gate {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center;
+        padding: 72px 28px; max-width: 1180px; margin: 0 auto;
+        border-top: 1px solid var(--line);
+      }
+      .ld-gate-copy h2 { font-size: clamp(24px, 3vw, 34px); font-weight: 750; letter-spacing: -0.01em; line-height: 1.15; margin: 12px 0 14px; }
+      .ld-gate-copy p { font-size: 15px; line-height: 1.6; color: var(--ink-2); max-width: 46ch; }
+      .ld-gate-demo.approval-banner { pointer-events: none; }
+      .ld-gate-demo .actions .btn[disabled] { opacity: .55; cursor: default; }
+
+      .ld-connect { padding: 72px 28px 88px; max-width: 1180px; margin: 0 auto; border-top: 1px solid var(--line); }
+      .ld-connect > .section-title { margin-bottom: 10px; }
+      .ld-connect > h2 { font-size: clamp(22px, 2.8vw, 30px); font-weight: 750; letter-spacing: -0.01em; margin: 0 0 28px; }
+      .ld-connect-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      .ld-connect-card h3 { font-size: 15px; font-weight: 650; margin: 0 0 8px; }
+      .ld-connect-card p { font-size: 13.5px; line-height: 1.6; color: var(--ink-2); margin: 0; }
+
+      .ld-footer {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+        padding: 20px 28px 32px; max-width: 1180px; margin: 0 auto;
+        font-size: 12px; color: var(--muted);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .ld-demo-block.block { animation: none; }
+      }
+
+      @media (max-width: 900px) {
+        .ld-hero { grid-template-columns: 1fr; padding-top: 40px; }
+        .ld-hero-demo { height: 220px; }
+        .ld-gate { grid-template-columns: 1fr; }
+        .ld-connect-grid { grid-template-columns: 1fr; }
+      }
+      @media (max-width: 480px) {
+        .ld-topbar { padding: 14px 16px; flex-wrap: wrap; gap: 8px 12px; }
+        .ld-hero, .ld-join, .ld-gate, .ld-connect, .ld-footer { padding-left: 16px; padding-right: 16px; }
+      }
     </style>
   </head>
   <body>
@@ -289,6 +401,97 @@
       </div>
     </div>
 
+    <!-- 著陸頁：/ 路徑（非 /r/:roomId）顯示這裡，房間頁的 .app 用 JS 隱藏。
+         沒有新增任何房間頁既有 CSS，樣式全部在上面的 #landing 區塊。 -->
+    <div id="landing" hidden>
+      <header class="ld-topbar">
+        <span class="brand">CoPlan</span>
+        <div class="ld-topbar-actions">
+          <button id="langToggleLanding" class="btn btn-secondary" aria-label="Switch language">中文</button>
+          <a class="btn btn-secondary" id="ldRepoLink" href="#" target="_blank" rel="noopener" data-i18n="ldRepo">View source on GitHub</a>
+        </div>
+      </header>
+
+      <section class="ld-hero">
+        <div class="ld-hero-copy">
+          <p class="section-title" data-i18n="ldEyebrow">Multiplayer × multi-agent</p>
+          <h1 data-i18n="ldHeadline">One itinerary. Every traveler's agent can touch it.</h1>
+          <p class="ld-sub" data-i18n="ldSub">Three friends and three AI agents editing the same trip, live. Conflicts collide on screen instead of hiding in a group chat — and the one thing no agent can ever do is press pay.</p>
+          <div class="ld-cta-row">
+            <div class="ld-tryit">
+              <input id="ldTryName" data-i18n-placeholder="ldNamePh" placeholder="Your name (optional)" aria-label="Your name" />
+              <button id="ldTryBtn" class="btn btn-primary" data-i18n="ldTry">Try it — instant demo room</button>
+            </div>
+          </div>
+          <p class="ld-demo-note" data-i18n="ldDemoNote">Demo mode — checkout is simulated, no real payment processor is connected.</p>
+        </div>
+        <div class="ld-hero-demo" aria-hidden="true">
+          <div class="ld-demo-tick" style="top:20px">09:00</div>
+          <div class="ld-demo-tick" style="top:76px">10:00</div>
+          <div class="ld-demo-tick" style="top:132px">11:00</div>
+          <div class="ld-demo-tick" style="top:188px">12:00</div>
+          <div class="ld-demo-block ld-demo-a block">
+            <div class="block-title">Tsukiji Market</div>
+            <div class="block-meta"><span class="tabular-nums">09:00–10:30</span><span class="block-dot" style="background:#2563eb"></span><span>🤖</span></div>
+          </div>
+          <div class="ld-demo-block ld-demo-b block conflict">
+            <div class="block-conflict-mark">⚠️</div>
+            <div class="block-title">Senso-ji Temple</div>
+            <div class="block-meta"><span class="tabular-nums">10:00–11:30</span><span class="block-dot" style="background:#db2777"></span><span>🙋</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="ld-join">
+        <div class="ld-join-card panel-box">
+          <h2 class="section-title" data-i18n="ldJoinTitle">Join a room</h2>
+          <p class="ld-join-sub" data-i18n="ldJoinSub">Meeting up with travel companions? Use the same room code and you'll land in the same trip.</p>
+          <div class="ld-join-row">
+            <input id="ldJoinName" data-i18n-placeholder="ldNamePh" placeholder="Your name (optional)" aria-label="Your name" />
+            <input id="ldJoinRoom" data-i18n-placeholder="ldRoomPh" placeholder="Room code (blank = new room)" aria-label="Room code" />
+            <button id="ldJoinBtn" class="btn btn-secondary" data-i18n="ldJoinBtn">Enter</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="ld-gate">
+        <div class="ld-gate-copy">
+          <p class="section-title" data-i18n="ldGateEyebrow">The one thing agents can't do</p>
+          <h2 data-i18n="ldGateHeadline">Agents can price the trip. They can't press pay.</h2>
+          <p data-i18n="ldGateBody">Not because a prompt asked it to behave — the approve button structurally does not exist in the browser tab that requested checkout. It only ever exists on another device, or another traveler's screen.</p>
+        </div>
+        <div class="ld-gate-demo approval-banner" aria-hidden="true">
+          <div class="line1">
+            <b style="color:#7c3aed" data-i18n="ldGateRequestedBy">Cindy's Agent</b>
+            <span data-i18n="ldGateRequested">requested checkout of</span>
+            <b class="tabular-nums">NT$12,000</b>
+          </div>
+          <div class="line2" data-i18n="ldGateLock">🔒 The device that requested this payment cannot approve it.</div>
+          <div class="actions"><button class="btn btn-secondary" type="button" disabled data-i18n="cancelRequest">Cancel this request</button></div>
+        </div>
+      </section>
+
+      <section class="ld-connect">
+        <p class="section-title" data-i18n="ldConnectEyebrow">Bring your own agent</p>
+        <h2 data-i18n="ldConnectHeadline">Two ways in</h2>
+        <div class="ld-connect-grid">
+          <div class="ld-connect-card panel-box">
+            <h3 data-i18n="ldChromeTitle">Chrome</h3>
+            <p data-i18n="ldChromeBody">Open your room link in Chrome 149 or later. The origin trial token for this domain is already in the page — no flags to enable.</p>
+          </div>
+          <div class="ld-connect-card panel-box">
+            <h3 data-i18n="ldChatGPTTitle">ChatGPT desktop</h3>
+            <p data-i18n="ldChatGPTBody">Open the same room link inside ChatGPT desktop's built-in browser. Needs a model with WebMCP support (GPT-5.6 Sol or Terra — not Luna).</p>
+          </div>
+        </div>
+      </section>
+
+      <footer class="ld-footer">
+        <span data-i18n="ldFooterNote">This is a hackathon demo. No account, no real payment, no data guarantee — a room is only as private as its link.</span>
+        <a href="#" id="ldRepoLink2" target="_blank" rel="noopener" data-i18n="ldRepo">View source on GitHub</a>
+      </footer>
+    </div>
+
     <script>
         // ═══ ⓪ 介面語言（中／英）═══
         //
@@ -327,6 +530,32 @@
             cancelRequest: "Cancel this request",
             fromAnotherDevice: "This request came from another device. You can approve it here.",
             approvePayment: "Approve payment", decline: "Decline",
+
+            // ── 著陸頁 ──
+            ldRepo: "View source on GitHub",
+            ldEyebrow: "Multiplayer × multi-agent",
+            ldHeadline: "One itinerary. Every traveler's agent can touch it.",
+            ldSub: "Three friends and three AI agents editing the same trip, live. Conflicts collide on screen instead of hiding in a group chat — and the one thing no agent can ever do is press pay.",
+            ldNamePh: "Your name (optional)",
+            ldTry: "Try it — instant demo room",
+            ldDemoNote: "Demo mode — checkout is simulated, no real payment processor is connected.",
+            ldJoinTitle: "Join a room",
+            ldJoinSub: "Meeting up with travel companions? Use the same room code and you'll land in the same trip.",
+            ldRoomPh: "Room code (blank = new room)",
+            ldJoinBtn: "Enter",
+            ldGateEyebrow: "The one thing agents can't do",
+            ldGateHeadline: "Agents can price the trip. They can't press pay.",
+            ldGateBody: "Not because a prompt asked it to behave — the approve button structurally does not exist in the browser tab that requested checkout. It only ever exists on another device, or another traveler's screen.",
+            ldGateRequestedBy: "Cindy's Agent",
+            ldGateRequested: "requested checkout of",
+            ldGateLock: "🔒 The device that requested this payment cannot approve it.",
+            ldConnectEyebrow: "Bring your own agent",
+            ldConnectHeadline: "Two ways in",
+            ldChromeTitle: "Chrome",
+            ldChromeBody: "Open your room link in Chrome 149 or later. The origin trial token for this domain is already in the page — no flags to enable.",
+            ldChatGPTTitle: "ChatGPT desktop",
+            ldChatGPTBody: "Open the same room link inside ChatGPT desktop's built-in browser. Needs a model with WebMCP support (GPT-5.6 Sol or Terra — not Luna).",
+            ldFooterNote: "This is a hackathon demo. No account, no real payment, no data guarantee — a room is only as private as its link.",
           },
           zh: {
             langToggleLabel: "EN", langToggleAria: "Switch to English",
@@ -356,6 +585,32 @@
             cancelRequest: "取消這筆請求",
             fromAnotherDevice: "這筆請求來自另一台裝置，你可以在這裡確認。",
             approvePayment: "確認付款", decline: "拒絕",
+
+            // ── 著陸頁 ──
+            ldRepo: "在 GitHub 上看原始碼",
+            ldEyebrow: "多人 × 多 Agent",
+            ldHeadline: "一份行程表，每位旅伴的 Agent 都能動手改。",
+            ldSub: "三個朋友、三個 AI Agent，即時編輯同一份行程。時間衝突直接在畫面上撞在一起，不是藏在群組訊息裡——而花錢那一步，沒有任何 Agent 按得下去。",
+            ldNamePh: "你的暱稱（可留白）",
+            ldTry: "立即試用——進示範房",
+            ldDemoNote: "Demo 模式——結帳為模擬情境，未接真實金流。",
+            ldJoinTitle: "進房",
+            ldJoinSub: "要跟旅伴會合？用同一個房號，就會進到同一份行程。",
+            ldRoomPh: "房號（留白＝開新房間）",
+            ldJoinBtn: "進入",
+            ldGateEyebrow: "Agent 唯一做不到的事",
+            ldGateHeadline: "Agent 能把行程湊好、把價格算出來，但按不下確認付款。",
+            ldGateBody: "不是靠提示詞拜託它自律——發起結帳的那個瀏覽器分頁，確認按鈕在結構上就不存在。它只會出現在另一台裝置，或另一位旅伴的畫面上。",
+            ldGateRequestedBy: "Cindy 的 Agent",
+            ldGateRequested: "要求結帳",
+            ldGateLock: "🔒 發出這筆付款請求的裝置不能自己確認。",
+            ldConnectEyebrow: "接上你自己的 Agent",
+            ldConnectHeadline: "兩種進入方式",
+            ldChromeTitle: "Chrome",
+            ldChromeBody: "用 Chrome 149 以上版本開啟你的房間連結。這個網域的 origin trial token 已經內建在頁面裡，不需要另外開任何 flag。",
+            ldChatGPTTitle: "ChatGPT 桌面版",
+            ldChatGPTBody: "在 ChatGPT 桌面版的內建瀏覽器裡開啟同一個房間連結。模型需支援 WebMCP（GPT-5.6 Sol 或 Terra——Luna 不支援）。",
+            ldFooterNote: "這是一個 hackathon demo：沒有帳號系統、沒有真實金流、資料沒有保存保證——房號本身就是進入權限，請勿放入敏感內容。",
           },
         };
 
@@ -396,11 +651,19 @@
         }
 
         // 換語言只重繪畫面，不重新註冊工具、不送任何訊息給伺服器。
+        // 著陸頁與房間頁共用這一個函式：[data-i18n] 這幾行是通用機制，兩種模式都要跑；
+        // room-only 的 render 呼叫與 #langToggle（房間頁的按鈕）則收進 isRoomMode 判斷式。
         function applyLang() {
           document.documentElement.lang = lang === "zh" ? "zh-Hant" : "en";
           for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = t(el.dataset.i18n);
           for (const el of document.querySelectorAll("[data-i18n-aria]")) el.setAttribute("aria-label", t(el.dataset.i18nAria));
           for (const el of document.querySelectorAll("[data-i18n-placeholder]")) el.placeholder = t(el.dataset.i18nPlaceholder);
+          const landingToggle = document.getElementById("langToggleLanding");
+          if (landingToggle) {
+            landingToggle.textContent = t("langToggleLabel");
+            landingToggle.setAttribute("aria-label", t("langToggleAria"));
+          }
+          if (!isRoomMode) return;
           const toggle = document.getElementById("langToggle");
           toggle.textContent = t("langToggleLabel");
           toggle.setAttribute("aria-label", t("langToggleAria"));
@@ -415,21 +678,22 @@
           renderEditCard();
         }
 
+        // ═══ ⓪.5 模式判斷：/r/:roomId → 房間模式；其他（含 /）→ 著陸頁模式 ═══
+        // 著陸頁沒有房間，連線與 WebMCP 工具在那裡都沒有意義，還會在伺服器留下垃圾成員——
+        // 所以 WebSocket 建立與工具註冊整段都收進這個判斷式裡，著陸頁模式完全不會執行到。
+        const roomPathMatch = location.pathname.match(/^\/r\/([\w-]+)/);
+        const isRoomMode = !!roomPathMatch;
+
         // ═══ ① 連線層 ═══
             // ═══ ① 從網址讀房號與身分 ═══
         // 網址格式：/r/<房號>?as=<暱稱>   例如 /r/tokyo?as=Cindy
-        const path = location.pathname.match(/^\/r\/([\w-]+)/);
+        const path = roomPathMatch;
         const roomId = path ? path[1] : "lobby";
         const myName = (new URLSearchParams(location.search).get("as") || "").slice(0, 20).trim() || "Anonymous Traveler";
 
         // 這個瀏覽器分頁的身分。刻意每次載入重新產生、刻意不存 localStorage ——
         // 存了的話同一台電腦開新分頁會拿到同一個 id，「跨 session 確認」的保護就失效了。
         const sessionId = crypto.randomUUID();
-        document.getElementById("roomIdLabel").textContent = t("roomLabel", roomId);
-
-        const proto = location.protocol === "https:" ? "wss" : "ws";
-        const ws = new WebSocket(`${proto}://${location.host}/api/room/${roomId}`);
-
 
         const status = document.getElementById("status");
         const gridBody = document.getElementById("gridBody");
@@ -447,32 +711,41 @@
             status.className = "status-dot" + (connState === "open" ? " ok" : connState === "closed" ? " bad" : "");
         }
 
-        ws.onopen = () => {
-            connState = "open";
-            renderStatus();
-            ws.send(JSON.stringify({ t: "join", name: me() }));
-            };
-        ws.onclose = () => {
-            connState = "closed";
-            renderStatus();
-            };
-        ws.onmessage = (event) => {
-            const state = JSON.parse(event.data);
-            items = state.items;
-            log = state.log;
-            members = state.members || {};
-            approvals = state.pendingApprovals || [];
-            maybeReset(items, approvals);
-            maybeSeedDemo(items);
-            render();
-            renderLog();
-            renderMembers();
-            renderBudget();
-            renderApprovals();
-            renderEditCard();
-            };
         // ═══ ② 身分：接縫函式，之後要換成登入只需改這裡 ═══
         const me = () => myName;
+
+        let ws;
+        if (isRoomMode) {
+            document.getElementById("roomIdLabel").textContent = t("roomLabel", roomId);
+
+            const proto = location.protocol === "https:" ? "wss" : "ws";
+            ws = new WebSocket(`${proto}://${location.host}/api/room/${roomId}`);
+
+            ws.onopen = () => {
+                connState = "open";
+                renderStatus();
+                ws.send(JSON.stringify({ t: "join", name: me() }));
+                };
+            ws.onclose = () => {
+                connState = "closed";
+                renderStatus();
+                };
+            ws.onmessage = (event) => {
+                const state = JSON.parse(event.data);
+                items = state.items;
+                log = state.log;
+                members = state.members || {};
+                approvals = state.pendingApprovals || [];
+                maybeReset(items, approvals);
+                maybeSeedDemo(items);
+                render();
+                renderLog();
+                renderMembers();
+                renderBudget();
+                renderApprovals();
+                renderEditCard();
+                };
+        }
 
         // 使用者與 Agent 可以控制的字串（名字、標題、稽核摘要）一律轉義後才進 innerHTML。
         // 這個房間是多人共享的，未轉義的字串會存進伺服器並在所有成員的瀏覽器執行（儲存型 XSS）。
@@ -1006,6 +1279,65 @@
             }
         }
 
+        // ═══ 語言切換 ═══
+        // 只動畫面：不重新註冊工具、不送訊息、不碰 sessionId。
+        // 語言存 localStorage（純顯示偏好）；sessionId 依然刻意不存，跨 session 付款保護不受影響。
+        // 著陸頁與房間頁共用這一個函式與同一把 localStorage key——著陸頁按鈕見下方 initLanding()。
+        function toggleLang() {
+            lang = lang === "en" ? "zh" : "en";
+            try { localStorage.setItem("coplan-lang", lang); } catch (e) {}
+            applyLang();
+        }
+
+        // ═══ 著陸頁：Try it／進房表單 ═══
+        // 房號用旅遊主題詞＋隨機字尾，兩次點擊必定拿到不同房號，避免所有訪客擠進同一間示範房互相干擾。
+        const ROOM_WORDS = ["tokyo", "kyoto", "osaka", "hakone", "nara", "sapporo", "kobe", "yokohama", "nagoya", "fuji"];
+        function randomRoomCode() {
+            const word = ROOM_WORDS[Math.floor(Math.random() * ROOM_WORDS.length)];
+            const suffix = Math.random().toString(36).slice(2, 6);
+            return `${word}-${suffix}`;
+        }
+
+        function initLanding() {
+            document.getElementById("landing").hidden = false;
+
+            const repoUrl = "https://github.com/jaspernot4ai/coplan";
+            for (const id of ["ldRepoLink", "ldRepoLink2"]) document.getElementById(id).href = repoUrl;
+
+            // 暱稱留白就不帶 as 參數——房間頁本來就會 fallback 成 Anonymous Traveler，
+            // 不需要在這裡重複一份同樣的預設名字。
+            function enterRoom(nameInputId, room, seed) {
+                const name = document.getElementById(nameInputId).value.slice(0, 20).trim();
+                const params = new URLSearchParams();
+                if (name) params.set("as", name);
+                if (seed) params.set("seed", "1");
+                const qs = params.toString();
+                location.href = `/r/${room}${qs ? "?" + qs : ""}`;
+            }
+
+            // Try it：一定是全新隨機房＋seed=1，讓評審一進去就有東西看，不是空網格。
+            document.getElementById("ldTryBtn").onclick = () => enterRoom("ldTryName", randomRoomCode(), true);
+
+            // 進房表單：房號留白＝也是隨機新房間，但不塞示範資料——
+            // 這裡的預設情境是「單純想試用」而不是「要看範例」，規格沒明講，屬於判斷。
+            document.getElementById("ldJoinBtn").onclick = () => {
+                const raw = document.getElementById("ldJoinRoom").value.trim();
+                const room = (raw.replace(/[^\w-]/g, "").slice(0, 40)) || randomRoomCode();
+                enterRoom("ldJoinName", room, false);
+            };
+
+            document.getElementById("langToggleLanding").onclick = toggleLang;
+        }
+
+        let mcpStatus, registered = false, mcpFound = null; // null = 還在偵測，之後才有 true/false
+
+        function renderMcpStatus() {
+            if (!mcpStatus) return;
+            mcpStatus.textContent = t(mcpFound === null ? "mcpDetecting" : mcpFound ? "mcpReady" : "mcpUnavailable");
+            mcpStatus.className = "status-dot" + (mcpFound === null ? "" : mcpFound ? " ok" : " bad");
+        }
+
+        if (isRoomMode) {
         // ═══ ⑤ 介面 A：人的表單 ═══
         document.getElementById("add").onclick = () => {
         const titleEl = document.getElementById("title");
@@ -1035,24 +1367,12 @@
             setTimeout(() => { copyInviteBtn.textContent = t("copyInvite"); }, 2000);
         };
 
-        // ═══ 語言切換 ═══
-        // 只動畫面：不重新註冊工具、不送訊息、不碰 sessionId。
-        // 語言存 localStorage（純顯示偏好）；sessionId 依然刻意不存，跨 session 付款保護不受影響。
-        document.getElementById("langToggle").onclick = () => {
-            lang = lang === "en" ? "zh" : "en";
-            try { localStorage.setItem("coplan-lang", lang); } catch (e) {}
-            applyLang();
-        };
+        document.getElementById("langToggle").onclick = toggleLang;
 
         // ═══ ⑤ 介面 B：Agent 的工具 ═══
-        const mcpStatus = document.getElementById("mcp");
-        let registered = false;
-        let mcpFound = null; // null = 還在偵測，之後才有 true/false
-
-        function renderMcpStatus() {
-            mcpStatus.textContent = t(mcpFound === null ? "mcpDetecting" : mcpFound ? "mcpReady" : "mcpUnavailable");
-            mcpStatus.className = "status-dot" + (mcpFound === null ? "" : mcpFound ? " ok" : " bad");
-        }
+        // 著陸頁模式完全不會進到這個 if 區塊——不建立 WebSocket 以外，也不會有
+        // setInterval 去偵測／註冊 modelContext。著陸頁沒有房間，工具在那裡沒有意義。
+        mcpStatus = document.getElementById("mcp");
 
         setInterval(() => {
         const mc = document.modelContext || navigator.modelContext || window.modelContext;
@@ -1163,9 +1483,16 @@
             }
         });
         }, 500);
+        } else {
+            // 著陸頁模式：房間頁的 .app 整個藏起來（只改 inline style，不動既有 CSS），
+            // 顯示 #landing，並接上 Try it／進房表單／著陸頁語言按鈕。
+            document.querySelector(".app").style.display = "none";
+            initLanding();
+        }
 
         // 最後才套語言：applyLang() 會用到上面所有 render 函式與 mcpFound，
-        // 放在檔案結尾才不會踩到 let 的暫時死區。
+        // 放在檔案結尾才不會踩到 let 的暫時死區。這行兩種模式都要跑——
+        // 著陸頁的文字也是靠同一個 [data-i18n] 機制套上去的。
         applyLang();
     </script>
   </body>
