@@ -1073,6 +1073,10 @@ Playwright 這個 session 仍然連不上，這次改用比前幾個任務更進
 
 - 上一節提到的 `.block.conflict` 計數問題最終判定是測試腳本本身的 selector 沒寫對範圍，不是程式碼的回歸，沒有修改任何產品程式碼。
 
+### 部署後的正式站確認
+
+`npx wrangler deploy` 成功（`Current Version ID: 9b4948ac-cf6b-4810-b39f-cf8d12e197a2`）。除了 curl 確認正式站的 HTML 裡已經有 `coplan-device`／`deviceId`／`notTheRequester` 這幾個新東西之外，額外把上面「A」那支 WebSocket 層測試腳本原封不動指向 `wss://coplan.coplan-lab.workers.dev`（房號換一個不會撞到任何人的隨機名字）重跑一次——三個情境（同裝置擋下／不同裝置同人放行／不同裝置不同人擋下）在**正式上線的 Durable Object** 上同樣全部通過，不只是本機 `wrangler dev` 過。
+
 ### 需要你自己確認的項目（我這邊無法驗證）
 
 - 開了 WebMCP flag 的 Chrome、ChatGPT 桌面版：這次規則改變後，`request_checkout` 的 `description` 與 `execute()` 回傳字串都改了措辭（見下方「規格未明講」），需要你實機確認 Agent 讀到新描述後的行為是否符合預期（例如會不會正確引導使用者去「自己的另一台裝置」而不是「找旅伴」）。
