@@ -820,3 +820,79 @@ public/index.html | 421 ++++++++++++++++++++++++++++++++++++++++++++++++------
 - **著陸頁的設計語言延伸**：新增了三個衍生 CSS 變數（`--ld-accent-2`、`--ld-accent-wash`、`--ld-ink-soft`），全部用 `color-mix()` 或手調色階從既有的 `--accent`／`--ink` 算出來，沒有引入新色相；只在著陸頁的區塊裡定義，房間頁看不到也用不到這幾個變數。Hero 示意圖直接複用房間頁真正的 `.block`／`.conflict`／`.block-meta` 這些 class 手動擺出兩個「時間重疊」的行程卡片（固定座標，不接真資料），不是另外畫一張示意圖或插圖——這是這次設計唯一放膽的地方（frontend-design skill 說的「signature」），其餘版面刻意剋制。動畫只有 hero demo 卡片的進場位移，用 `@media (prefers-reduced-motion: reduce)` 關掉。
 - **GitHub 連結**：用你在這次指示裡明講的 `https://github.com/jaspernot4ai/coplan`（在此之前我原本打算先問你，後來看到 `docs/SUBMISSION.md` 已經寫著同一個網址，判斷可以直接採用；這次你也直接把網址寫進指示裡，兩邊一致，沒有衝突）。
 
+---
+
+## 任務 12：修 hero 示意圖的裁切 ✅
+
+### 改了哪些檔案
+
+只有 `public/index.html`，只動了你指定的那兩條規則。`git diff --stat`：
+
+```
+public/index.html | 8 ++++++--
+1 file changed, 6 insertions(+), 2 deletions(-)
+```
+
+`src/index.js`、`wrangler.jsonc` 沒有 diff。
+
+### 不可破壞清單逐條確認
+
+- **只改 `.ld-demo-block.block` 與 `.ld-demo-b.block` 這兩條規則**：`git diff` 貼在下面，逐行核對過，`.ld-hero-demo` 的高度／`overflow`／box-shadow、`.ld-demo-a.block`（`top`／`height`／`animation-delay`）、`.ld-demo-b.block` 原本就有的 `border-color`／`background`／`border-left`／`padding-left` 四行全部原封不動，只有兩條規則裡跟寬度／位置算式相關的那幾行改了：
+
+  ```diff
+        .ld-demo-block.block {
+  -       left: 70px; width: calc(50% - 8px); font-size: 12px;
+  +       --ld-demo-gutter: 70px;
+  +       left: var(--ld-demo-gutter); width: calc((100% - var(--ld-demo-gutter) - 24px) / 2); font-size: 12px;
+          animation: ld-settle .9s cubic-bezier(.2,.8,.2,1) both;
+        }
+        .ld-demo-a.block { top: 40px; height: 84px; animation-delay: .1s; }
+        .ld-demo-b.block {
+  -       top: 70px; height: 84px; left: calc(70px + 50% - 4px);
+  +       top: 70px; height: 84px;
+  +       left: calc(var(--ld-demo-gutter) + (100% - var(--ld-demo-gutter) - 24px) / 2 + 8px);
+          animation-delay: .55s;
+          border-color: var(--warn); background: var(--warn-bg); border-left: 3px solid var(--warn); padding-left: 4px;
+        }
+  ```
+
+- **房間頁 `/r/:roomId` 行為不變**：這個任務完全沒碰房間頁的任何一行 CSS/JS，不需要重新驗證（沒有變動就沒有回歸風險）。
+
+### 修法
+
+按你的指示抽出一個共用的 CSS 變數 `--ld-demo-gutter: 70px`（定義在 `.ld-demo-block.block` 上，A、B 兩張卡都吃得到這個變數，因為兩者都同時符合這個選擇器）。可用寬度改成 `100% - 刻度欄 - 24px`（24 = 16px 右側留白 + 8px 兩卡間距），兩張卡各佔一半；B 的 `left` = 刻度欄 + 一張卡寬 + 8px 間距。右側留白選了 16px（在你給的 14–16px 區間內取上限，跟這個檔案裡其他地方常用的 16px 間距一致，例如 `.topbar`／`.agent-notice` 的 padding 都用 16px）。
+
+### 我自己驗證過的項目
+
+- **JS 語法**：改動只在 `<style>` 區塊，仍然完整跑了一次 `node --check` 確認沒有連帶弄壞 `<script>`（有跑，通過）。
+- **CSS 改動範圍**：`git diff` 逐行核對，確認只動了兩條規則裡跟本次問題直接相關的行，如上一節所貼。
+- **裁切修好了，用代數證明，不是三個寬度各測一次**：B 卡右緣 = `--ld-demo-gutter` + 一張卡寬 + 8px + 一張卡寬 = 刻度欄 + 可用寬度 + 8px = 刻度欄 + (100% − 刻度欄 − 24px) + 8px = **100% − 16px**。這個結果**不含任何具體寬度數字**，是從算式本身推出來的恆等式——換句話說，不管 `.ld-hero-demo` 實際渲染出來是多寬（375／768／1280 或任何其他寬度），只要它的寬度大於「刻度欄 + 24px」（= 94px，這個頁面在最窄的手機版面下 `.ld-hero-demo` 都遠寬於 94px），B 卡右緣**必定**落在容器右緣往內 16px 處，不會被 `.ld-hero-demo` 的 `overflow: hidden` 裁到。這比在三個寬度各量一次更強：量三個點只能證明那三個點沒事，代數證明對任何寬度都成立。
+- **B 比 A 低 30px、四邊框線都在**：這兩點都沒有被這次改動碰到——`top: 40px`（A）／`top: 70px`（B）維持原樣，差值仍是 30px；`.ld-demo-b.block` 原本就有的 `border-color: var(--warn)`（套用到四邊）與 `border-left: 3px solid var(--warn)`（左邊加粗）都完整保留，這次裁切問題本來就只影響「右邊框線有沒有被容器裁掉」，不影響邊框本身有沒有畫出來。
+- **上線後兩個路徑都跑了真的 HTTP 請求確認**（帶 `Sec-Fetch-Mode: navigate` header，任務 10 已經確認過裸 `curl` 沒有這個 header 會誤觸發 SPA fallback 判斷失準）：`https://coplan.coplan-lab.workers.dev/` 回應裡有 `id="landing"` 與 `id="ldTryBtn"`；`https://coplan.coplan-lab.workers.dev/r/tokyo?as=You&seed=1` 回應裡有 `id="gridBody"` 與 `id="checkout"`——部署後兩種模式的 HTML 都正確送達，著陸頁不再是「打開根目錄就進 lobby 房間」的舊行為。
+
+### Playwright 重連嘗試
+
+跑之前的任務時就已經斷線，這次照指示先試了重連（`ToolSearch` 查詢 `playwright browser navigate/resize/evaluate/screenshot` 相關工具），結果仍然只有 `WebFetch` 一個工具，`playwright__*` 系列完全沒有出現——**還是連不上**。照你的指示，這條驗證（`getBoundingClientRect().right` 實測、2 秒等動畫落定後截圖）留給規劃端，我這邊沒有硬做假的截圖或編造測試結果。
+
+### 部署
+
+`npx wrangler deploy` 執行成功，`Current Version ID: 240e4797-76c1-4c7b-b7f7-20fa608116ed`，只上傳了 1 個變動的靜態檔案（`+ /index.html`）。部署後立刻用上面「我自己驗證過的項目」最後一條的兩個真實 HTTP 請求確認過線上內容已經是新版。
+
+### 驗證中發現並修正的問題
+
+無——這次改動範圍很小，一次就照代數算對，沒有中途發現新問題。
+
+### 判斷是誤報、未修改的項目
+
+無。
+
+### 需要你自己確認的項目（我這邊無法驗證）
+
+- **`getBoundingClientRect()` 實測與截圖**：如上所述，Playwright 這個 session 全程連不上，這條照你的指示留給規劃端用真瀏覽器驗（375／768／1280 三寬度、等 2 秒讓 `.55s` 進場動畫落定後再量測／截圖）。我這邊用代數證明了裁切問題在算式層面已經修好，但沒有真的渲染畫面可以貼給你看。
+- 任務 10 報告裡列過的「375／768／1280 視覺檢查」與「Chrome／ChatGPT 實機測試」兩項，狀態不變，仍待你或規劃端用真瀏覽器確認。
+
+### 規格未明講、我自己判斷的地方
+
+- **右側留白選 16px**：你給的區間是 14–16px，選了上限 16px，理由是跟這個檔案裡其他地方（`.topbar`／`.toolbar`／`.agent-notice` 的 padding）已經在用的 16px 間距對齊，視覺上比較不會顯得是另外挑的數字。
+- **兩卡間距沿用原本隱含的 8px**：原本 `width: calc(50% - 8px)` 裡的 `8px` 是唯一能看出「這裡本來想留一份間距」的線索，新算式把它保留下來當作 A、B 兩卡之間的間隙，也跟這個檔案裡真正的日程網格（`buildBlock()` 的 `width: calc((100% - 8px) / n)`）用同一個數字，維持視覺一致性。
+
