@@ -464,7 +464,7 @@
         <div class="ld-gate-copy">
           <p class="section-title" data-i18n="ldGateEyebrow">The one thing agents can't do</p>
           <h2 data-i18n="ldGateHeadline">Agents can price the trip. They can't press pay.</h2>
-          <p data-i18n="ldGateBody">Not because a prompt asked it to behave — the approve button structurally does not exist in the browser tab that requested checkout. It only ever exists on another device, or another traveler's screen.</p>
+          <p data-i18n="ldGateBody">Not because a prompt asked it to behave — the approve button structurally does not exist in the browser tab that requested checkout. It only ever exists on that same traveler's own other device, never a fellow traveler's screen.</p>
         </div>
         <div class="ld-gate-demo approval-banner" aria-hidden="true">
           <div class="line1">
@@ -535,6 +535,7 @@
             lockLine: "🔒 For your protection, <b>the device that requested this payment cannot approve it</b>.<br>\n                        Open this room on your phone or another device, or ask a fellow traveler to approve:<br>",
             cancelRequest: "Cancel this request",
             fromAnotherDevice: "This request came from another device. You can approve it here.",
+            notTheRequester: (name) => `Only ${name} can approve this payment, from ${name}'s own other device.`,
             approvePayment: "Approve payment", decline: "Decline",
 
             // ── 著陸頁 ──
@@ -552,7 +553,7 @@
             ldRoomInvalid: "Room codes use English letters or numbers only — try a different code.",
             ldGateEyebrow: "The one thing agents can't do",
             ldGateHeadline: "Agents can price the trip. They can't press pay.",
-            ldGateBody: "Not because a prompt asked it to behave — the approve button structurally does not exist in the browser tab that requested checkout. It only ever exists on another device, or another traveler's screen.",
+            ldGateBody: "Not because a prompt asked it to behave — the approve button structurally does not exist in the browser tab that requested checkout. It only ever exists on that same traveler's own other device, never a fellow traveler's screen.",
             ldGateRequestedBy: "Cindy's Agent",
             ldGateRequested: "requested checkout of",
             ldGateLock: "🔒 The device that requested this payment cannot approve it.",
@@ -591,6 +592,7 @@
             lockLine: "🔒 為了保護你，<b>發出這筆付款請求的裝置不能自己確認</b>。<br>\n                        請用手機或另一台裝置開啟這個房間，或請同行旅伴確認：<br>",
             cancelRequest: "取消這筆請求",
             fromAnotherDevice: "這筆請求來自另一台裝置，你可以在這裡確認。",
+            notTheRequester: (name) => `只有 ${name} 本人能確認這筆付款，且必須在 ${name} 自己的另一台裝置上操作。`,
             approvePayment: "確認付款", decline: "拒絕",
 
             // ── 著陸頁 ──
@@ -608,7 +610,7 @@
             ldRoomInvalid: "房號請用英文字母或數字——換一個試試。",
             ldGateEyebrow: "Agent 唯一做不到的事",
             ldGateHeadline: "Agent 能把行程湊好、把價格算出來，但按不下確認付款。",
-            ldGateBody: "不是靠提示詞拜託它自律——發起結帳的那個瀏覽器分頁，確認按鈕在結構上就不存在。它只會出現在另一台裝置，或另一位旅伴的畫面上。",
+            ldGateBody: "不是靠提示詞拜託它自律——發起結帳的那個瀏覽器分頁，確認按鈕在結構上就不存在。它只會出現在本人自己的另一台裝置上，不會出現在其他旅伴的畫面。",
             ldGateRequestedBy: "Cindy 的 Agent",
             ldGateRequested: "要求結帳",
             ldGateLock: "🔒 發出這筆付款請求的裝置不能自己確認。",
@@ -643,7 +645,8 @@
           [/^This device already has a pending checkout request — approve or cancel it before requesting another$/, () => "這台裝置已經有一筆待確認的結帳請求，請先確認或取消再送出新的"],
           [/^Too many pending checkout requests in this room right now — try again once one is resolved$/, () => "這個房間目前待確認的結帳請求太多，等其中一筆處理完再試"],
           [/^Requested checkout of NT\$(.+) \((\d+) items?\), pending approval$/, (m) => `要求結帳 NT$${m[1]}（${m[2]} 筆），等待確認`],
-          [/^Approval blocked: the device that requested checkout cannot approve it\. Approve from another device or member\.$/, () => "確認被擋下：發出結帳請求的裝置不能自己確認，請改用另一台裝置或由其他成員確認。"],
+          [/^Approval blocked: this is the same device that requested checkout\. Approve from a different device\.$/, () => "確認被擋下：這是發出結帳請求的同一台裝置，請換一台裝置確認。"],
+          [/^Approval blocked: only (.+) can approve this payment\.$/, (m) => `確認被擋下：只有 ${m[1]} 本人能確認這筆付款。`],
           [/^Approved payment of NT\$(.+) \(demo mode, no real payment processor connected\)$/, (m) => `已確認付款 NT$${m[1]}（demo 模式，未接真實金流）`],
           [/^Room reset — itinerary, timeline and pending approvals cleared$/, () => "房間已重置，行程、時間軸與待確認請求都已清空"],
           [/^Declined the checkout request for NT\$(.+)$/, (m) => `已拒絕 NT$${m[1]} 的結帳請求`],
@@ -699,9 +702,27 @@
         const roomId = path ? path[1] : "lobby";
         const myName = (new URLSearchParams(location.search).get("as") || "").slice(0, 20).trim() || "Anonymous Traveler";
 
-        // 這個瀏覽器分頁的身分。刻意每次載入重新產生、刻意不存 localStorage ——
-        // 存了的話同一台電腦開新分頁會拿到同一個 id，「跨 session 確認」的保護就失效了。
+        // 這個瀏覽器分頁的身分。每次載入重新產生，不存 localStorage——
+        // 用來擋「同一個分頁重送訊息」這種最直接的情況。
         const sessionId = crypto.randomUUID();
+
+        // 這個瀏覽器 profile 的身分（不是分頁）。任務 14 之前這裡的舊註解寫「存 localStorage
+        // 保護就失效」，推論是反的：sessionId 不存，才會讓同一個瀏覽器每開一個新分頁都拿到
+        // 新 id，反而讓 ChatGPT 桌面版可以照樣被要求「開新分頁按確認」而繞過保護（已實測確認）。
+        // deviceId 就是為了擋這個洞而存在——存起來，同一個瀏覽器 profile 的所有分頁才會共用
+        // 同一把 id，新分頁也騙不過去。存取失敗（例如無痕模式部分限制、使用者關閉儲存權限）
+        // 就退回每次載入隨機——這會讓這個瀏覽器分頁的行為退回舊版「新分頁就能繞過」的弱保護，
+        // 不是無關緊要的邊角案例，見 docs/TASKS.md 任務 14 回報。
+        let deviceId;
+        try {
+          deviceId = localStorage.getItem("coplan-device");
+          if (!deviceId) {
+            deviceId = crypto.randomUUID();
+            localStorage.setItem("coplan-device", deviceId);
+          }
+        } catch (e) {
+          deviceId = crypto.randomUUID();
+        }
 
         const status = document.getElementById("status");
         const gridBody = document.getElementById("gridBody");
@@ -790,16 +811,17 @@
         }
 
         // 結帳請求：只建立待確認請求，永遠不會完成付款。
-        // 帶上 sessionId，讓伺服器知道是哪個分頁發起的——發起的分頁不得自行確認。
+        // 帶上 sessionId 與 deviceId，讓伺服器知道是哪個分頁、哪台裝置發起的——
+        // 兩者都不得用來自行確認（見 src/index.js 的 approve_checkout）。
         function requestCheckout(viaAgent) {
-          ws.send(JSON.stringify({ t: "request_checkout", by: me(), viaAgent, sessionId }));
-          return `Checkout request sent — it needs to be approved on another device or by another member.`;
+          ws.send(JSON.stringify({ t: "request_checkout", by: me(), viaAgent, sessionId, deviceId }));
+          return `Checkout request sent — it needs to be approved by ${me()} from a different device.`;
         }
 
-        // 確認付款。伺服器會擋掉「發起請求的那個 session 自己確認」的情況，
-        // 前端也不會在該 session 渲染這顆按鈕（雙重保險）。
+        // 確認付款。伺服器會擋掉「同一台裝置」與「不是本人」這兩種情況，
+        // 前端也不會在這兩種情況下渲染確認按鈕（雙重保險）。
         function approveCheckout(id) {
-          ws.send(JSON.stringify({ t: "approve_checkout", id, by: me(), sessionId, viaAgent: false }));
+          ws.send(JSON.stringify({ t: "approve_checkout", id, by: me(), sessionId, deviceId, viaAgent: false }));
         }
         function rejectCheckout(id) {
           ws.send(JSON.stringify({ t: "reject_checkout", id, by: me() }));
@@ -1219,12 +1241,15 @@
             }
         }
 
-        // 待確認的結帳請求。
+        // 待確認的結帳請求。三種畫面狀態（任務 14）：
         //
         // 這裡的設計是整個作品的核心：能操作瀏覽器的 Agent 點得到任何「存在」的按鈕，
         // 所以光是在 WebMCP 工具層不開放付款並不夠。真正的邊界是——
-        // 發起請求的那個 session，確認按鈕**根本不會被建立出來**（不是 disabled，是 DOM 裡沒有）。
-        // 付款只能來自另一個 session：同行成員的視窗，或使用者自己的手機。
+        // 同一台裝置，確認按鈕**根本不會被建立出來**（不是 disabled，是 DOM 裡沒有）；
+        // 另一台裝置但不是本人，一樣沒有確認按鈕，只能看、只能取消。
+        // 付款只能來自本人自己的另一台裝置：使用者自己的手機，或另一個瀏覽器 profile。
+        // 前端這裡的判斷只是使用者體驗（不建立按鈕），真正權威的判斷在伺服器（src/index.js
+        // 的 approve_checkout），就算 Agent 繞過畫面直接送 WebSocket 訊息，伺服器一樣會擋。
         function renderApprovals() {
             const el = document.getElementById("approvals");
             el.innerHTML = "";
@@ -1242,45 +1267,56 @@
                 line1.innerHTML = `${who} ${esc(t("requestedCheckout"))} <b class="tabular-nums">NT$${p.total.toLocaleString()}</b> (${esc(t("itemCount", p.itemIds.length))})${p.overBudget ? ` <span style="color:var(--danger)">${esc(t("overBudgetLimit"))}</span>` : ""}`;
                 box.appendChild(line1);
 
-                const isRequester = p.requestedBySession === sessionId;
+                // 跟伺服器同一套判斷（見 src/index.js 的 sameDevice／notTheRequester）：
+                // sessionId 擋同分頁、deviceId 擋同瀏覽器開新分頁；兩條都吃 request_checkout
+                // 存下來的舊欄位，同一批舊資料在改版後重整仍然算得出正確結果。
+                const sameDevice = p.requestedBySession === sessionId || p.requestedByDevice === deviceId;
+                const isTheRequester = p.requestedBy === me();
 
-                if (isRequester) {
-                    // 發起的分頁：不建立確認按鈕，只說明該去哪裡確認。
+                const actions = document.createElement("div");
+                actions.className = "actions";
+                // 否決不需要保護——取消一筆請求不會動到錢，沒有風險，任何 session 都可以做，
+                // 也能避免請求卡住房間（發起人不在線、或本人剛好一時看不到畫面）。
+                const cancelBtn = document.createElement("button");
+                cancelBtn.className = "btn btn-secondary";
+                cancelBtn.onclick = () => rejectCheckout(p.id);
+
+                if (sameDevice) {
+                    // 狀態 1：同一台裝置（請求端）。不建立確認按鈕，只說明該去哪裡確認。
                     const line2 = document.createElement("div");
                     line2.className = "line2";
                     line2.innerHTML = t("lockLine") + `
                         <code class="room-url">${esc(location.href)}</code>`;
                     box.appendChild(line2);
 
-                    // 否決不需要保護——取消一筆請求沒有風險，任何 session 都可以做。
-                    const actions = document.createElement("div");
-                    actions.className = "actions";
-                    const no = document.createElement("button");
-                    no.textContent = t("cancelRequest");
-                    no.className = "btn btn-secondary";
-                    no.onclick = () => rejectCheckout(p.id);
-                    actions.appendChild(no);
+                    cancelBtn.textContent = t("cancelRequest");
+                    actions.appendChild(cancelBtn);
                     box.appendChild(actions);
-                } else {
+                } else if (isTheRequester) {
+                    // 狀態 2：另一台裝置、而且是本人——可以確認付款。
                     const line2 = document.createElement("div");
                     line2.className = "line2";
                     line2.textContent = t("fromAnotherDevice");
                     box.appendChild(line2);
-
-                    const actions = document.createElement("div");
-                    actions.className = "actions";
 
                     const ok = document.createElement("button");
                     ok.textContent = t("approvePayment");
                     ok.className = "btn btn-primary";
                     ok.onclick = () => approveCheckout(p.id);
 
-                    const no = document.createElement("button");
-                    no.textContent = t("decline");
-                    no.className = "btn btn-secondary";
-                    no.onclick = () => rejectCheckout(p.id);
+                    cancelBtn.textContent = t("decline");
+                    actions.append(ok, cancelBtn);
+                    box.appendChild(actions);
+                } else {
+                    // 狀態 3（新）：另一台裝置、但不是本人（旅伴）——看得到、能取消，
+                    // 但沒有任何確認按鈕。只有本人能授權自己的錢。
+                    const line2 = document.createElement("div");
+                    line2.className = "line2";
+                    line2.textContent = t("notTheRequester", p.requestedBy);
+                    box.appendChild(line2);
 
-                    actions.append(ok, no);
+                    cancelBtn.textContent = t("decline");
+                    actions.appendChild(cancelBtn);
                     box.appendChild(actions);
                 }
                 el.appendChild(box);
@@ -1501,13 +1537,13 @@
         // 付款只能由人在畫面上按下確認。
         mc.registerTool({
             name: "request_checkout",
-            description: "Submit a checkout request for the current user, bundling all priced, unpaid itinerary items together. Important: this tool cannot and will not complete payment. Payment must be approved on another device or by another member — the tab that made this request will not show an approve button, so you cannot complete it yourself. After calling this, tell the user to open the same room URL on their phone, or ask a fellow traveler to approve.",
+            description: "Submit a checkout request for the current user, bundling all priced, unpaid itinerary items together. Important: this tool cannot and will not complete payment. Payment can only be approved by this same user, from a different device — a fellow traveler cannot approve someone else's payment, and the tab that made this request will not show an approve button, so you cannot complete it yourself. After calling this, tell the user to open the same room URL on their own phone or another device to approve it.",
             inputSchema: { type: "object", properties: {} },
             execute: () => {
             const spent = mySpent();
             if (spent === 0) return { content: [{ type: "text", text: "There's nothing that needs payment right now." }] };
             requestCheckout(true);
-            return { content: [{ type: "text", text: `Checkout request for NT$${spent.toLocaleString()} sent. I can't complete payment, and this tab won't show an approve button — please open ${location.href} on your phone or another device to approve, or ask a fellow traveler to approve it for you.` }] };
+            return { content: [{ type: "text", text: `Checkout request for NT$${spent.toLocaleString()} sent. I can't complete payment, and this tab won't show an approve button — please open ${location.href} on ${me()}'s own phone or another device to approve it. Only ${me()} can approve this — a fellow traveler cannot do it on their behalf.` }] };
             }
         });
         }, 500);

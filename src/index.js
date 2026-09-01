@@ -223,6 +223,7 @@ export class RoomDO {
           id: crypto.randomUUID(),
           requestedBy: msg.by,
           requestedBySession: msg.sessionId,
+          requestedByDevice: msg.deviceId,
           viaAgent: !!msg.viaAgent,
           itemIds: mine.map(a => a.id),
           total,
@@ -246,15 +247,26 @@ export class RoomDO {
       if (idx >= 0) {
         const approval = this.pendingApprovals[idx];
 
-        // 唯一穩固的邊界：發起結帳請求的 session 不能自己確認。
-        // Agent 能操作的範圍就是它所在的那個瀏覽器分頁，只要確認發生在別的 session，
-        // 不論 Agent 怎麼操作畫面都碰不到。
-        if (msg.sessionId === approval.requestedBySession) {
+        // 放行必須同時滿足兩條：確認者不是同一台裝置、且確認者就是本人。
+        // sessionId 的檢查繼續保留（同分頁重送訊息這種最直接的情況交給它擋），
+        // deviceId 額外擋掉「同瀏覽器開新分頁」——實測發現 sessionId 單獨擋不住這個洞：
+        // sessionId 每次頁面載入都重新產生、不存 localStorage，新分頁就是新 session，舊版檢查會放行。
+        const sameDevice = msg.sessionId === approval.requestedBySession || msg.deviceId === approval.requestedByDevice;
+        const notTheRequester = msg.by !== approval.requestedBy;
+
+        if (sameDevice) {
           this.addLog({
             who: msg.by,
             viaAgent: false,
             action: "approve_blocked",
-            summary: "Approval blocked: the device that requested checkout cannot approve it. Approve from another device or member.",
+            summary: "Approval blocked: this is the same device that requested checkout. Approve from a different device.",
+          });
+        } else if (notTheRequester) {
+          this.addLog({
+            who: msg.by,
+            viaAgent: false,
+            action: "approve_blocked",
+            summary: `Approval blocked: only ${approval.requestedBy} can approve this payment.`,
           });
         } else {
           for (const a of this.items) {

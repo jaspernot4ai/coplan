@@ -967,3 +967,121 @@ Playwright 這個 session 仍然連不上（`ToolSearch` 查過，`playwright__*
 - **每次點擊都先重置錯誤訊息的顯示狀態**：規格沒提到這點，但如果不這樣做，使用者先打錯一次（看到提示）、修正後再打對一次，提示文字會一直卡在畫面上，即使這次已經正確導航離開頁面也不影響觀感，但如果使用者是「打錯→不理會提示→修正→再點一次」這種操作順序，讓提示在下一次點擊時自動先隱藏比較不會有「提示訊息是不是還有效」的疑慮。
 - **沒有部署**：這次沒有另外跑 `npx wrangler deploy`，跟前一次「房號小寫」那次同一個判斷——這個 session 只在你明確要求時才部署（任務 12 有明講才部署），這次訊息裡沒有要求，維持只 commit + push。
 
+---
+
+## 任務 14：付款授權改為「綁裝置 + 綁本人」✅
+
+### 0. `src/index.js` 改動範圍確認
+
+只動了 `request_checkout` 與 `approve_checkout` 這兩個分支，其餘一行沒碰。完整 `git diff src/index.js`：
+
+```diff
+diff --git a/src/index.js b/src/index.js
+index 226e8a6..057f1e6 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -223,6 +223,7 @@ export class RoomDO {
+           id: crypto.randomUUID(),
+           requestedBy: msg.by,
+           requestedBySession: msg.sessionId,
++          requestedByDevice: msg.deviceId,
+           viaAgent: !!msg.viaAgent,
+           itemIds: mine.map(a => a.id),
+           total,
+@@ -246,15 +247,26 @@ export class RoomDO {
+       if (idx >= 0) {
+         const approval = this.pendingApprovals[idx];
+ 
+-        // 唯一穩固的邊界：發起結帳請求的 session 不能自己確認。
+-        // Agent 能操作的範圍就是它所在的那個瀏覽器分頁，只要確認發生在別的 session，
+-        // 不論 Agent 怎麼操作畫面都碰不到。
+-        if (msg.sessionId === approval.requestedBySession) {
++        // 放行必須同時滿足兩條：確認者不是同一台裝置、且確認者就是本人。
++        // sessionId 的檢查繼續保留（同分頁重送訊息這種最直接的情況交給它擋），
++        // deviceId 額外擋掉「同瀏覽器開新分頁」——實測發現 sessionId 單獨擋不住這個洞：
++        // sessionId 每次頁面載入都重新產生、不存 localStorage，新分頁就是新 session，舊版檢查會放行。
++        const sameDevice = msg.sessionId === approval.requestedBySession || msg.deviceId === approval.requestedByDevice;
++        const notTheRequester = msg.by !== approval.requestedBy;
++
++        if (sameDevice) {
++          this.addLog({
++            who: msg.by,
++            viaAgent: false,
++            action: "approve_blocked",
++            summary: "Approval blocked: this is the same device that requested checkout. Approve from a different device.",
++          });
++        } else if (notTheRequester) {
+           this.addLog({
+             who: msg.by,
+             viaAgent: false,
+             action: "approve_blocked",
+-            summary: "Approval blocked: the device that requested checkout cannot approve it. Approve from another device or member.",
++            summary: `Approval blocked: only ${approval.requestedBy} can approve this payment.`,
+           });
+         } else {
+           for (const a of this.items) {
+```
+
+`node --input-type=module --check < src/index.js` 通過。
+
+### 改了哪些檔案
+
+```
+README.md           |  15 +++++--
+docs/DEMO-SCRIPT.md |  30 +++++++++-----
+docs/SUBMISSION.md  |  64 ++++++++++++++++++++++++------
+public/index.html   | 112 ++++++++++++++++++++++++++++++++++------------------
+src/index.js        |  22 ++++++++---
+5 files changed, 173 insertions(+), 70 deletions(-)
+```
+
+### 不可破壞清單逐條確認
+
+- **`src/index.js` 只改 `request_checkout` 與 `approve_checkout` 這兩個分支**：見上方完整 diff，衝突偵測（`detectConflicts`）、廣播（`broadcast`）、儲存格式（`state()`／`save()`）、`join`／`add`／`update`／`remove`／`set_budget`／`reset_room`／`reject_checkout` 全部一行沒動。
+- **狀態 1（同裝置）的英文文案逐字不變**：`lockLine` 這個常數完全沒有改過任何一個字元，包含裡面已經不完全準確的「ask a fellow traveler to approve」——這是刻意保留，見下方「規格未明講」。
+- **`SUMMARY_RULES` 與 `src/index.js` 的 summary 樣板數量重新對齊**：改動前後都用腳本實際數過，`src/index.js` 的 `summary:` 樣板從 13 個變成 14 個（`approve_blocked` 從 1 個分成 2 個），`SUMMARY_RULES` 也對應改成 14 條，不是憑印象改。
+
+### 我自己驗證過的項目，以及驗證方法
+
+Playwright 這個 session 仍然連不上，這次改用比前幾個任務更進一步的手法：
+
+**A. WebSocket 層直接測試（繞過 UI，第 5 節要求的核心）**：完全不經過任何瀏覽器或 jsdom，用 Node 21+ 內建的原生 `WebSocket`（不用裝任何套件）直接連上本機 `wrangler dev` 的房間 WebSocket，照著 `public/index.html` 現在送出的協定格式手動組訊息送出，比對伺服器實際回傳的狀態與時間軸紀錄。伺服器只看訊息裡的 `sessionId`／`deviceId`／`by` 欄位，不看是哪條實體連線送的，所以用同一條連線改變這幾個欄位的值，就足以模擬「同分頁重送」「同瀏覽器新分頁」「另一個瀏覽器 profile」「旅伴的裝置」這幾種情境，這正是規格說的「Agent 可以直接在 console 發訊息」那個威脅模型。三個情境全部通過：
+
+1. **同裝置（同 deviceId，不同 sessionId）嘗試確認**：`pendingApprovals` 維持 1 筆、行程維持未付款，時間軸最新一筆是 `action: "approve_blocked"`、`summary` 逐字等於 `"Approval blocked: this is the same device that requested checkout. Approve from a different device."`。
+2. **不同裝置、同一個人確認**：行程正確變 `paid: true`，`pendingApprovals` 清空，時間軸寫入 `action: "approve_checkout"`。
+3. **不同裝置、不是本人（旅伴）確認**：`pendingApprovals` 維持 1 筆、行程維持未付款，時間軸最新一筆逐字等於 `"Approval blocked: only Cindy can approve this payment."`。
+
+**B. 端對端真實渲染測試（三種畫面狀態 × 兩種語言，第 3／5 節）**：用 jsdom 執行真正的房間頁 `<script>`，但把 `window.WebSocket` 直接指到 Node 的原生全域 `WebSocket`（不是 mock），讓它真的連上本機伺服器、真的收送真實廣播——這樣連「畫面渲染」都是吃真實伺服器算出來的資料，不是我自己組 `pendingApprovals` 餵進 `renderApprovals()`。開了三個獨立的 jsdom 實體模擬三個真實裝置：Cindy 的分頁（請求端）、Cindy 的另一支裝置（同名不同 profile）、Bob 的裝置（旅伴）。逐一讀取 `#approvals` 實際渲染出來的 DOM 文字與按鈕，中英文各測一次，六組全部通過：
+- 狀態 1（請求端）：只有「Cancel this request」／「取消這筆請求」一顆按鈕，`lockLine` 文字逐字比對正確（含刻意保留的舊措辭）。
+- 狀態 2（本人另一裝置）：「Approve payment」＋「Decline」／「確認付款」＋「拒絕」都在，`fromAnotherDevice` 文字逐字正確。
+- 狀態 3（旅伴，新狀態）：只有「Decline」／「拒絕」一顆按鈕，沒有任何確認按鈕；新文案 `notTheRequester` 逐字正確——英文 `"Only Cindy can approve this payment, from Cindy's own other device."`，中文「只有 Cindy 本人能確認這筆付款，且必須在 Cindy 自己的另一台裝置上操作。」
+
+**C. `deviceId` 持久化與 fallback（第 5 節第 4 條）**：jsdom 在不同實體之間不會共用 localStorage（就算同一個 origin），這是測試工具本身的限制，不是真瀏覽器的行為，所以改用同一個手動實作的 Map 當共用 store 注入兩個 jsdom 實體的 `window.localStorage`，藉此驗證**程式碼本身的讀寫邏輯**（先 `getItem`、沒有才 `setItem` 新的）是否正確：第二次「重整」讀回跟第一次完全相同的 UUID，證實邏輯正確。另外測了 `localStorage` 完全不可存取的情境（模擬部分無痕模式限制）：頁面沒有整個掛掉（沒有任何 window error）、`deviceId` 照樣 fallback 成隨機值、`request_checkout` 訊息裡確實帶著這個 fallback 值送出——退回的是任務指示裡明講要記下來的那個弱行為，不是壞掉。
+
+**D. 房間頁其餘功能無回歸（第 5 節第 6 條）**：同樣用「jsdom + 真的原生 WebSocket 連真伺服器」的手法，新增兩筆時間重疊的行程確認 `#gridBody` 裡真的出現 2 個 `.block.conflict`（第一次測到 3 個，debug 後發現是我的 CSS selector 沒有限定在 `#gridBody` 底下，連著陸頁裡刻意複用同一組 class 的裝飾用示意卡都算了進去——是我測試腳本自己的錯，不是程式的回歸，修正 selector 後重測就對了）；刪除一筆後衝突正確清成 0；`setBudget(5000)` 後 `#budgetStatus` 正確顯示 `NT$5,000`；`setInterval` 呼叫次數為 1，確認 WebMCP 偵測輪詢仍在房間模式下正確啟動（沿用任務 10 已經驗證過的 `isRoomMode` 機制，這次的改動完全沒有動到那段）。
+
+**E. JS 語法**：`public/index.html` 抽出的 `<script>` 跑 `node --check` 通過；`src/index.js` 用 `node --input-type=module --check` 通過。
+
+**F. Console 錯誤**：以上所有測試全程用 `window.addEventListener("error", ...)` 監聽，沒有捕捉到任何錯誤。
+
+### 驗證中發現並修正的問題
+
+- **`SUMMARY_RULES` 對不齊**：改完 `src/index.js` 的 `approve_blocked` 分支後，第一時間就同步改了對應的兩條 `SUMMARY_RULES`，並用一支小腳本重新數過兩邊的樣板數量（13→14 對 13→14），確認沒有漏改。這不是驗證後才發現的問題，是照著規格第 4 節的提醒同步做的，寫在這裡是為了說明確實有重新確認過數量，不是憑印象。
+- **落地端測試腳本自己的 bug（不是程式碼的 bug）**：上面「D」提到的 `.block.conflict` selector 沒有限定範圍，一度以為衝突偵測壞了，debug 後發現是著陸頁的裝飾用示意卡（`.ld-demo-b.block.conflict`）也被同一個 querySelector 選到——著陸頁的 `#landing` 就算在房間模式下也還在 DOM 裡（只是被 `hidden`／`display:none`），不會被移除。修正測試腳本的 selector 範圍後問題消失，程式本身沒有問題。
+
+### 判斷是誤報、未修改的項目
+
+- 上一節提到的 `.block.conflict` 計數問題最終判定是測試腳本本身的 selector 沒寫對範圍，不是程式碼的回歸，沒有修改任何產品程式碼。
+
+### 需要你自己確認的項目（我這邊無法驗證）
+
+- 開了 WebMCP flag 的 Chrome、ChatGPT 桌面版：這次規則改變後，`request_checkout` 的 `description` 與 `execute()` 回傳字串都改了措辭（見下方「規格未明講」），需要你實機確認 Agent 讀到新描述後的行為是否符合預期（例如會不會正確引導使用者去「自己的另一台裝置」而不是「找旅伴」）。
+- 375／768／1280 視覺檢查、Chrome／ChatGPT 實機測試——狀態不變，仍待你或規劃端確認。
+
+### 規格未明講、我自己判斷的地方
+
+- **`lockLine`（狀態 1 的鎖定文案）刻意保留舊措辭「ask a fellow traveler to approve」，即使現在旅伴已經不能確認了**：這是規格第 3 節明講的——「維持現有的 🔒 For your protection... 英文文案逐字不變」。這段文字技術上已經不完全準確（旅伴看得到、能取消，但不能確認），但這是規格直接指定的，我沒有自己決定要不要改，完全依照指示保留。已經在 README／SUBMISSION 裡誠實寫出這個模型的規則，DEMO-SCRIPT 裡也加了警語提醒錄影時不要示範「旅伴確認」這個現在會失敗的流程。
+- **`request_checkout` 的 WebMCP 工具 `description` 與 `execute()` 回傳字串我主動改了措辭**（原文提到「or another member」「ask a fellow traveler」，現在改成「only be approved by this same user, from a different device」）：規格第 0 節只鎖死 `src/index.js` 的範圍，沒有明講前端的 WebMCP 工具文字要不要一起改，但這是 Agent 真正會讀到、據以行動的文字，放著不改等於讓 Agent 繼續以為旅伴可以幫忙確認——這跟整個任務「不要為了好看而藏起真相」的精神直接衝突，判斷後主動修正。這跟 `lockLine` 是兩件不同的事：`lockLine` 是規格明講要凍結的字串，`request_checkout` 的工具描述沒有被明講要凍結。
+- **額外發現一個規格沒完全講到的漏洞，主動記錄進文件**：規格第 6 節說「偽造沒用，deviceId 相同仍被擋」——這句話只在「偽造者跟原請求是同一台裝置」時成立。如果有人用**自己真正不同的裝置**、在網址上打 `?as=Cindy` 冒充 Cindy，`deviceId` 檢查會通過（裝置真的不同）、身分檢查也會通過（`by` 欄位真的是 "Cindy"）——因為這個作品完全沒有帳號系統，沒有辦法分辨網址列上打「Cindy」的人是不是真的 Cindy。這跟規格提到的「Agent 開無痕視窗繞過」是不同的洞（那個是 Cindy 自己的 Agent 合法地用 Cindy 的身分開新裝置；這個是別人冒用 Cindy 的名字）。已經誠實寫進 `README.md` 與 `docs/SUBMISSION.md` 的已知限制段落，不是規格要求但判斷屬於「這個模型的上限」該一併寫清楚的範圍。
+- **`DEMO-SCRIPT.md` 的備案從「開 `?as=Bob` 由 Bob 確認」改成「開 `?as=Cindy` 模擬 Cindy 自己的第二台裝置」**：舊備案在新規則下錄影時會直接在鏡頭前失敗（Bob 現在一定被伺服器擋下），不只是「效果較差」，是「根本不會成功」，所以不只是更新用詞，是換了一個真的會成功的備案，並加了警語提醒不要照舊版備案錄。
+

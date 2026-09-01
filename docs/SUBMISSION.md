@@ -56,7 +56,8 @@ with their own name, and every traveler can bring their own AI agent.
   it is the part of the interface that makes agent collaboration trustworthy.
 - **Payment is the one thing an agent cannot do.** An agent can price the trip, gather the
   bookings and submit a checkout request. It cannot approve it. Approval must come from a
-  different session — a fellow traveler's window, or the user's own phone.
+  different device **and** the same person who requested it — a fellow traveler cannot
+  approve someone else's payment, only the user's own phone or second browser can.
 
 ---
 
@@ -121,17 +122,38 @@ signals is an arms race that would also block the exact platform this project ta
 > The session that requested a payment may not approve it — and in that session
 > the approve button is never rendered at all. Not disabled: absent from the DOM.
 
-One rule covers both real situations without a special case:
+At the time I believed "another session" was the boundary, and shipped it that way: a
+`sessionId` generated fresh on every page load, deliberately never persisted, checked
+server-side against the session that made the request.
 
-- **Traveling together** — a fellow traveler approves in their window. Shared trip money
-  gets a second pair of eyes, which is how people actually settle group expenses.
-- **Traveling alone** — the user approves on their **phone**, opening the same room URL.
-  This is the flow everyone already knows from bank 3-D Secure prompts, and it needed no
-  new backend: the phone is simply another session on the same WebSocket.
+**That belief was also wrong, and I only found out by trying to break it again.** The
+reasoning for never persisting `sessionId` was "persisting it would let a new tab share
+the same id, which would weaken the boundary" — backwards. Not persisting it is exactly
+what let a *new tab* look like a *different session* to the server. I asked ChatGPT desktop
+to open a new tab and approve its own checkout request. It did, and the payment went
+through, with zero code changes on its side — the "boundary" was never a device boundary,
+it was a per-tab counter. On top of that, the original rule had no identity check at all:
+*any* other session could approve — including a different member entirely, spending
+someone else's money without them knowing.
+
+The rule is now two conditions, both server-side:
+
+1. **A different device**, not merely a different tab — enforced with a second identifier
+   (`deviceId`) that's generated once and persisted in `localStorage`, so every tab in the
+   same browser profile shares it and a new tab no longer gets a free pass.
+2. **The same person who requested it** — a fellow traveler's window can see that a payment
+   is pending, but renders no approve button at all, only the option to decline.
+
+- **Traveling together** — a fellow traveler can see a payment is pending and can decline
+  it (declining is safe, it moves no money), but cannot approve someone else's payment.
+- **Traveling alone** — the user approves on their **own phone or second browser**, opening
+  the same room URL under their own name. This is the flow everyone already knows from bank
+  3-D Secure prompts.
 
 The declared tool surface tells the agent this in words too, so a cooperative agent guides
 the user to the right device instead of hunting for a button that isn't there. But the
-words are a courtesy; the structure is the boundary.
+words are a courtesy; the structure is the boundary — and even the structure has an honest
+edge documented under "Known limits" below, not hidden.
 
 ### 3. Interfaces built for agents need tighter quotas than interfaces built for people
 
@@ -176,8 +198,11 @@ session, another device, another person. Everything else is a request for good b
 
 ## What's next for CoPlan
 
-- **Device-bound approval** (WebAuthn / passkey) so the solo-traveler flow is hardware-backed
-  rather than session-separated.
+- **Hardware-backed device binding** (WebAuthn / passkey) so approval is tied to something a
+  device can prove via the OS/TPM-backed platform authenticator, rather than a `localStorage`
+  value a fresh browser profile can simply not have. This closes the identity-forgery gap
+  described under "Known limits" below — a real account/credential system, not just a bigger
+  random id.
 - **Real inventory and payments.** Prices are user-entered estimates today; with a real
   catalogue, price must be resolved server-side from the catalogue and never accepted from
   the client or the agent.
@@ -205,5 +230,18 @@ mistaken for oversights:
 - **The server does not validate field types or ranges** beyond an allow-list that protects
   the payment flag.
 - **Payments are simulated.** No real money moves; items are marked paid in DEMO mode.
-- **An agent that controls every one of your devices** defeats cross-session approval —
-  but that is a fully compromised-device threat model, not the one this project addresses.
+- **`deviceId` falls back to a fresh random value if `localStorage` is unavailable** (some
+  private-browsing modes, storage permission denied) — this silently reproduces the original
+  weak per-tab behavior described above. Not a hypothetical edge case; worth knowing before
+  demoing on a locked-down browser.
+- **An agent that can open a private window or a second browser profile** gets a fresh
+  `deviceId` and can legitimately re-declare the same name it already had — passing both
+  checks. Harder than opening a second tab, not impossible.
+- **Identity is a URL parameter, not a credential.** Forging `?as=<someone else's name>`
+  from the *same* device you already used doesn't help (the device check still catches
+  you), but forging it from a genuinely different device is not defended against — there is
+  no account system to tell a real "Cindy" apart from anyone claiming to be Cindy on their
+  own phone.
+- **An agent that controls every one of your devices** defeats device-bound approval
+  entirely — but that is a fully compromised-device threat model, not the one this project
+  addresses.
