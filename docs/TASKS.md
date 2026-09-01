@@ -1492,10 +1492,6 @@ coplan_device=<uuid>; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`（本機
 - 開了 WebMCP flag 的 Chrome、ChatGPT 桌面版：`request_checkout` 的 `description`／
   `execute()` 回傳字串這次又小幅調整過措辭（拿掉「a fellow traveler cannot approve」這句，
   因為現在這句已經不是伺服器保證的事實），需要你實機確認 Agent 讀到新描述後的行為。
-- 正式站的 `Secure` cookie 屬性：程式邏輯是 `url.protocol === "https:"` 才加 `Secure`，本機
-  `http://127.0.0.1:8787` 已經 curl 驗證過正確沒有加；正式站是 `https://`，理論上會正確加上，
-  但這一項我還沒有實際部署後用 `curl -i https://coplan.coplan-lab.workers.dev/api/device`
-  親自確認過（部署後會補測，見下方「部署後的正式站確認」）。
 - 375／768／1280 視覺檢查、Chrome／ChatGPT 實機測試——狀態不變，仍待你或規劃端確認。
 
 ### 規格未明講、我自己判斷的地方
@@ -1535,5 +1531,16 @@ coplan_device=<uuid>; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`（本機
 
 ### 部署後的正式站確認
 
-（部署與正式站驗證結果見下方附加段落——先完成 commit／push／deploy 後補上。）
+`npx wrangler deploy` 成功（`Current Version ID: 50863da8-9e56-4464-b798-3bb61519e94a`）。
+
+- `curl -i https://coplan.coplan-lab.workers.dev/api/device`：`Set-Cookie` 正確包含
+  `HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000; Secure`——上一節「需要你自己確認」
+  裡提到還沒實測過的 `Secure` 屬性，這裡已經補測過，正式站（https）確實有加，本機
+  （http）確認沒有加，跟程式邏輯（`url.protocol === "https:"` 才加）一致。
+- 把「A」的核心情境（同 cookie 跨連線擋下、不同 cookie 放行）與「B」的反偽造 header
+  測試，原封不動指向 `wss://coplan.coplan-lab.workers.dev`（房號都換成不會撞到任何人
+  的隨機名字）重跑一次——三項全部通過，不只是本機 `wrangler dev` 過。
+- 本機 `wrangler dev` 的背景行程（含它衍生出的子行程，共 3 個）已經用
+  `Get-CimInstance Win32_Process` 找出 PID 後 `taskkill //F` 逐一關閉，`netstat` 確認
+  8787 埠已經清空，沒有留下殘留的行程。
 
